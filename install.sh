@@ -569,7 +569,7 @@ EOF
     sudo apt install -y openwebrx
     
     print_step "Setting OpenWebRX admin password..."
-    echo "$OPENWEBRX_PASS" | sudo openwebrx admin adduser admin 2>/dev/null || \
+    printf "%s\n%s\n" "$OPENWEBRX_PASS" "$OPENWEBRX_PASS" | sudo openwebrx admin adduser admin 2>/dev/null || \
         print_info "OpenWebRX admin may already exist"
     
     sudo systemctl disable openwebrx
