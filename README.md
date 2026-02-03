@@ -138,27 +138,11 @@ Once rebooted, Delling will be ready:
 
 ---
 
-## Updating Configuration
-
-### Update OliveTin Dashboard Only
-
-If you only need to update the OliveTin configuration without reinstalling everything:
-
-```bash
-cd Delling
-git pull
-./update-olivetin.sh
-```
-
-This backs up the old config, installs the new one, and restarts OliveTin.
-
----
-
 ## Service Ports
 
 | Service | Port |
 |---------|------|
-| OliveTin (control panel) | 1337 |
+| Delling Dashboard | 1337 |
 | FM Radio | 10100 |
 | DAB+ Radio | 7979 |
 | Tinymedia (media server) | 5000 |
@@ -180,7 +164,7 @@ This backs up the old config, installs the new one, and restarts OliveTin.
 ### Services not starting
 - Check service status: `sudo systemctl status <service-name>`
 - View logs: `sudo journalctl -u <service-name> -n 50`
-- Restart OliveTin: `sudo systemctl restart OliveTin`
+- Restart dashboard: `sudo systemctl restart delling-dashboard`
 
 ### SDR not detected
 - Check USB connection: `lsusb | grep Realtek`
@@ -224,7 +208,7 @@ MIT License - See LICENSE file for details
 
 Built with open-source software:
 
-- [OliveTin](https://github.com/OliveTin/OliveTin) - Web-based command interface
+- [Flask](https://flask.palletsprojects.com/) - Python web framework
 - [OpenWebRX+](https://github.com/luarvique/openwebrx) - SDR web receiver
 - [dump1090-fa](https://github.com/flightaware/dump1090) - ADS-B decoder
 - [AIS-catcher](https://github.com/jvde-github/AIS-catcher) - AIS receiver

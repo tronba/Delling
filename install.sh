@@ -6,6 +6,9 @@
 
 set -e  # Exit on error
 
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -69,7 +72,7 @@ ask_questions() {
     echo ""
     echo "This script will install and configure:"
     echo "  • WiFi Access Point (open network 'Delling')"
-    echo "  • OliveTin Dashboard"
+    echo "  • Delling Dashboard"
     echo "  • Tinymedia (media server)"
     echo "  • Kiwix (offline Wikipedia)"
     echo "  • FM/VHF Radio, DAB+ Radio, OpenWebRX"
@@ -204,155 +207,40 @@ phase2_network() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
-# PHASE 3: DASHBOARD (OLIVETIN)
+# PHASE 3: DASHBOARD
 # ═══════════════════════════════════════════════════════════════════════════
 
 phase3_dashboard() {
-    print_header "Phase 3: Dashboard (OliveTin)"
+    print_header "Phase 3: Delling Dashboard"
     
-    print_step "Downloading OliveTin..."
-    DEB_ARCH=$(dpkg --print-architecture)
-    wget -q -O /tmp/OliveTin.deb \
-        "https://github.com/OliveTin/OliveTin/releases/latest/download/OliveTin_linux_${DEB_ARCH}.deb"
+    print_step "Installing dashboard..."
+    sudo mkdir -p /opt/delling/dashboard
+    sudo cp "$SCRIPT_DIR/dashboard/app.py" /opt/delling/dashboard/
+    sudo chown -R $DELLING_USER:$DELLING_USER /opt/delling/dashboard
     
-    print_step "Installing OliveTin..."
-    sudo dpkg -i /tmp/OliveTin.deb || sudo apt install -f -y
-    rm /tmp/OliveTin.deb
-    
-    print_step "Creating OliveTin configuration..."
-    create_olivetin_config
-    
-    print_step "Enabling OliveTin service..."
-    sudo systemctl enable --now OliveTin
+    print_step "Creating dashboard service..."
+    cat << EOF | sudo tee /etc/systemd/system/delling-dashboard.service > /dev/null
+[Unit]
+Description=Delling Dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=$DELLING_USER
+WorkingDirectory=/opt/delling/dashboard
+ExecStart=/usr/bin/python3 /opt/delling/dashboard/app.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    print_step "Enabling dashboard service..."
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now delling-dashboard
     
     print_step "Phase 3 complete!"
-}
-
-create_olivetin_config() {
-    cat << 'OLIVETIN_EOF' | sudo tee /etc/OliveTin/config.yaml > /dev/null
-# Delling OliveTin Configuration
-listenAddressSingleHTTPFrontend: 0.0.0.0:1337
-
-pageTitle: Delling Hub
-showFooter: false
-showNavigation: true
-showNewVersions: false
-logLevel: "INFO"
-
-dashboards:
-  - title: Main
-    contents:
-      - title: 📻 Radio
-        contents:
-          - type: fieldset
-            contents:
-              - title: FM Radio
-              - title: DAB+ Radio
-              - title: OpenWebRX
-
-      - title: 💬 Communication
-        contents:
-          - type: fieldset
-            contents:
-              - title: Meshtastic
-
-      - title: 📁 Media & Knowledge
-        contents:
-          - type: fieldset
-            contents:
-              - title: Media Server
-              - title: Kiwix (Wikipedia)
-
-      - title: ✈️ Tracking
-        contents:
-          - type: fieldset
-            contents:
-              - title: Aircraft (ADS-B)
-              - title: Ships (AIS)
-
-actions:
-  - title: FM Radio
-    icon: 📻
-    shell: |
-      /opt/delling/scripts/stop-all-sdr.sh
-      sudo systemctl start rtl-fm-radio
-      echo "FM Radio started!"
-      echo "Open: http://192.168.4.1:10100"
-    timeout: 30
-    popupOnStart: execution-dialog-stdout-only
-
-  - title: DAB+ Radio
-    icon: 📻
-    shell: |
-      /opt/delling/scripts/stop-all-sdr.sh
-      sudo systemctl start welle-cli
-      echo "DAB+ Radio started!"
-      echo "Open: http://192.168.4.1:7979"
-    timeout: 30
-    popupOnStart: execution-dialog-stdout-only
-
-  - title: OpenWebRX
-    icon: 📡
-    shell: |
-      /opt/delling/scripts/stop-all-sdr.sh
-      sudo systemctl start openwebrx
-      echo "OpenWebRX started!"
-      echo "Open: http://192.168.4.1:8073"
-    timeout: 30
-    popupOnStart: execution-dialog-stdout-only
-
-  - title: Meshtastic
-    icon: 💬
-    shell: |
-      echo "Meshtastic mesh messaging"
-      echo "Open: http://192.168.4.10"
-      echo ""
-      echo "Note: Heltec V3 must be connected to Delling WiFi"
-      echo "with static IP 192.168.4.10"
-    timeout: 5
-    popupOnStart: execution-dialog-stdout-only
-
-  - title: Media Server
-    icon: 🎬
-    shell: |
-      echo "Tinymedia - Browse and stream media files"
-      echo "Open: http://192.168.4.1:5000"
-    timeout: 5
-    popupOnStart: execution-dialog-stdout-only
-
-  - title: Kiwix (Wikipedia)
-    icon: 📚
-    shell: |
-      if systemctl is-active --quiet kiwix; then
-        echo "Kiwix - Offline Wikipedia & more"
-        echo "Open: http://192.168.4.1:8000"
-      else
-        echo "Kiwix is not running."
-        echo "Make sure USB drive with .zim files is connected."
-      fi
-    timeout: 5
-    popupOnStart: execution-dialog-stdout-only
-
-  - title: Aircraft (ADS-B)
-    icon: ✈️
-    shell: |
-      /opt/delling/scripts/stop-all-sdr.sh
-      sudo systemctl start dump1090-fa
-      echo "Aircraft tracking started!"
-      echo "Open: http://192.168.4.1:8080"
-    timeout: 30
-    popupOnStart: execution-dialog-stdout-only
-
-  - title: Ships (AIS)
-    icon: 🚢
-    shell: |
-      /opt/delling/scripts/stop-all-sdr.sh
-      sudo systemctl start aiscatcher
-      echo "Ship tracking started!"
-      echo "Open: http://192.168.4.1:8100"
-    timeout: 30
-    popupOnStart: execution-dialog-stdout-only
-OLIVETIN_EOF
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -602,13 +490,13 @@ phase7_finalize() {
     print_header "Phase 7: Finalize"
     
     print_step "Ensuring all auto-start services are enabled..."
-    sudo systemctl enable OliveTin
+    sudo systemctl enable delling-dashboard
     sudo systemctl enable tinymedia
     sudo systemctl enable kiwix
     sudo systemctl enable nftables
     
     print_step "Starting always-on services..."
-    sudo systemctl start OliveTin
+    sudo systemctl start delling-dashboard
     sudo systemctl start tinymedia
     # Kiwix will start on boot if USB is present
     
