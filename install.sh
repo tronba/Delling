@@ -500,9 +500,10 @@ phase6_sdr_apps() {
     print_step "Installing FM/VHF Radio (rtl_fm_webgui)..."
     if [ -d /opt/rtl_fm_webgui ]; then
         print_info "rtl_fm_webgui exists, updating..."
-        cd /opt/rtl_fm_webgui && git pull
+        cd /opt/rtl_fm_webgui && sudo git pull
     else
-        git clone https://github.com/tronba/rtl_fm_python_webgui /opt/rtl_fm_webgui
+        sudo git clone https://github.com/tronba/rtl_fm_python_webgui /opt/rtl_fm_webgui
+        sudo chown -R $DELLING_USER:$DELLING_USER /opt/rtl_fm_webgui
     fi
     cd /opt/rtl_fm_webgui
     ./build.sh
