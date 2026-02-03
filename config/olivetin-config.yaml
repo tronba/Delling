@@ -16,61 +16,25 @@ logLevel: "INFO"
 dashboards:
   - title: Main
     contents:
-      # ═══════════════════════════════════════════════════════════════
-      # RADIO
-      # ═══════════════════════════════════════════════════════════════
-      - title: 📻 Radio
+      - type: fieldset
+        title: Services
         contents:
-          - type: fieldset
-            contents:
-              - title: FM Radio
-                type: button
-                cssClass: radio-btn
-              - title: DAB+ Radio
-                type: button
-                cssClass: radio-btn
-              - title: OpenWebRX
-                type: button
-                cssClass: radio-btn
-
-      # ═══════════════════════════════════════════════════════════════
-      # COMS
-      # ═══════════════════════════════════════════════════════════════
-      - title: 💬 Communication
-        contents:
-          - type: fieldset
-            contents:
-              - title: Meshtastic
-                type: button
-                cssClass: coms-btn
-
-      # ═══════════════════════════════════════════════════════════════
-      # MEDIA
-      # ═══════════════════════════════════════════════════════════════
-      - title: 📁 Media & Knowledge
-        contents:
-          - type: fieldset
-            contents:
-              - title: Media Server
-                type: button
-                cssClass: media-btn
-              - title: Kiwix (Wikipedia)
-                type: button
-                cssClass: media-btn
-
-      # ═══════════════════════════════════════════════════════════════
-      # TRACKING
-      # ═══════════════════════════════════════════════════════════════
-      - title: ✈️ Tracking
-        contents:
-          - type: fieldset
-            contents:
-              - title: Aircraft (ADS-B)
-                type: button
-                cssClass: tracking-btn
-              - title: Ships (AIS)
-                type: button
-                cssClass: tracking-btn
+          - title: FM Radio
+            type: button
+          - title: DAB+ Radio
+            type: button
+          - title: Media Server
+            type: button
+          - title: Kiwix (Wikipedia)
+            type: button
+          - title: Aircraft (ADS-B)
+            type: button
+          - title: Ships (AIS)
+            type: button
+          - title: Meshtastic
+            type: button
+          - title: OpenWebRX
+            type: button
 
 # ═══════════════════════════════════════════════════════════════════════════
 # ACTION DEFINITIONS
@@ -84,32 +48,29 @@ actions:
   - title: FM Radio
     icon: 📻
     shell: |
-      /opt/delling/scripts/stop-all-sdr.sh
-      sudo systemctl start rtl-fm-radio
-      echo "FM Radio started!"
-      echo "Open: http://192.168.4.1:10100"
+      /opt/delling/scripts/stop-all-sdr.sh >/dev/null 2>&1
+      sudo systemctl start rtl-fm-radio >/dev/null 2>&1
+      sleep 2
+      xdg-open http://192.168.4.1:10100 >/dev/null 2>&1 &
     timeout: 30
-    popupOnStart: execution-dialog-stdout-only
 
   - title: DAB+ Radio
     icon: 📻
     shell: |
-      /opt/delling/scripts/stop-all-sdr.sh
-      sudo systemctl start welle-cli
-      echo "DAB+ Radio started!"
-      echo "Open: http://192.168.4.1:7979"
+      /opt/delling/scripts/stop-all-sdr.sh >/dev/null 2>&1
+      sudo systemctl start welle-cli >/dev/null 2>&1
+      sleep 2
+      xdg-open http://192.168.4.1:7979 >/dev/null 2>&1 &
     timeout: 30
-    popupOnStart: execution-dialog-stdout-only
 
   - title: OpenWebRX
     icon: 📡
     shell: |
-      /opt/delling/scripts/stop-all-sdr.sh
-      sudo systemctl start openwebrx
-      echo "OpenWebRX started!"
-      echo "Open: http://192.168.4.1:8073"
+      /opt/delling/scripts/stop-all-sdr.sh >/dev/null 2>&1
+      sudo systemctl start openwebrx >/dev/null 2>&1
+      sleep 2
+      xdg-open http://192.168.4.1:8073 >/dev/null 2>&1 &
     timeout: 30
-    popupOnStart: execution-dialog-stdout-only
 
   # ─────────────────────────────────────────────────────────────────────────
   # COMMUNICATION ACTIONS
@@ -118,13 +79,8 @@ actions:
   - title: Meshtastic
     icon: 💬
     shell: |
-      echo "Meshtastic mesh messaging"
-      echo "Open: http://192.168.4.10"
-      echo ""
-      echo "Note: Heltec V3 must be connected to Delling WiFi"
-      echo "with static IP 192.168.4.10"
+      xdg-open http://192.168.4.10 >/dev/null 2>&1 &
     timeout: 5
-    popupOnStart: execution-dialog-stdout-only
 
   # ─────────────────────────────────────────────────────────────────────────
   # MEDIA ACTIONS (Always-on services - just show links)
@@ -133,23 +89,14 @@ actions:
   - title: Media Server
     icon: 🎬
     shell: |
-      echo "Tinymedia - Browse and stream media files"
-      echo "Open: http://192.168.4.1:5000"
+      xdg-open http://192.168.4.1:5000 >/dev/null 2>&1 &
     timeout: 5
-    popupOnStart: execution-dialog-stdout-only
 
   - title: Kiwix (Wikipedia)
     icon: 📚
     shell: |
-      if systemctl is-active --quiet kiwix; then
-        echo "Kiwix - Offline Wikipedia & more"
-        echo "Open: http://192.168.4.1:8000"
-      else
-        echo "Kiwix is not running."
-        echo "Make sure USB drive with .zim files is connected."
-      fi
+      xdg-open http://192.168.4.1:8000 >/dev/null 2>&1 &
     timeout: 5
-    popupOnStart: execution-dialog-stdout-only
 
   # ─────────────────────────────────────────────────────────────────────────
   # TRACKING ACTIONS
@@ -158,22 +105,20 @@ actions:
   - title: Aircraft (ADS-B)
     icon: ✈️
     shell: |
-      /opt/delling/scripts/stop-all-sdr.sh
-      sudo systemctl start dump1090-fa
-      echo "Aircraft tracking started!"
-      echo "Open: http://192.168.4.1:8080"
+      /opt/delling/scripts/stop-all-sdr.sh >/dev/null 2>&1
+      sudo systemctl start dump1090-fa >/dev/null 2>&1
+      sleep 2
+      xdg-open http://192.168.4.1:8080 >/dev/null 2>&1 &
     timeout: 30
-    popupOnStart: execution-dialog-stdout-only
 
   - title: Ships (AIS)
     icon: 🚢
     shell: |
-      /opt/delling/scripts/stop-all-sdr.sh
-      sudo systemctl start aiscatcher
-      echo "Ship tracking started!"
-      echo "Open: http://192.168.4.1:8100"
+      /opt/delling/scripts/stop-all-sdr.sh >/dev/null 2>&1
+      sudo systemctl start aiscatcher >/dev/null 2>&1
+      sleep 2
+      xdg-open http://192.168.4.1:8100 >/dev/null 2>&1 &
     timeout: 30
-    popupOnStart: execution-dialog-stdout-only
 
   # ─────────────────────────────────────────────────────────────────────────
   # SYSTEM ACTIONS (optional, can add to dashboard if needed)
