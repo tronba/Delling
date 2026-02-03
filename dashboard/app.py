@@ -14,56 +14,64 @@ SERVICES = {
         'icon': '📻',
         'service': 'rtl-fm-radio',
         'url': 'http://192.168.4.1:10100',
-        'sdr': True
+        'sdr': True,
+        'always_on': False
     },
     'dab-radio': {
         'name': 'DAB+ Radio',
         'icon': '📻',
         'service': 'welle-cli',
         'url': 'http://192.168.4.1:7979',
-        'sdr': True
+        'sdr': True,
+        'always_on': False
     },
     'media': {
         'name': 'Media Server',
         'icon': '🎬',
-        'service': None,
+        'service': 'tinymedia',
         'url': 'http://192.168.4.1:5000',
-        'sdr': False
+        'sdr': False,
+        'always_on': True
     },
     'kiwix': {
         'name': 'Kiwix',
         'icon': '📚',
-        'service': None,
+        'service': 'kiwix',
         'url': 'http://192.168.4.1:8000',
-        'sdr': False
+        'sdr': False,
+        'always_on': True
     },
     'aircraft': {
         'name': 'Aircraft',
         'icon': '✈️',
         'service': 'dump1090-fa',
         'url': 'http://192.168.4.1:8080',
-        'sdr': True
+        'sdr': True,
+        'always_on': False
     },
     'ships': {
         'name': 'Ships',
         'icon': '🚢',
         'service': 'aiscatcher',
         'url': 'http://192.168.4.1:8100',
-        'sdr': True
+        'sdr': True,
+        'always_on': False
     },
     'meshtastic': {
         'name': 'Meshtastic',
         'icon': '💬',
         'service': None,
         'url': 'http://192.168.4.10',
-        'sdr': False
+        'sdr': False,
+        'always_on': True
     },
     'openwebrx': {
         'name': 'OpenWebRX',
         'icon': '📡',
         'service': 'openwebrx',
         'url': 'http://192.168.4.1:8073',
-        'sdr': True
+        'sdr': True,
+        'always_on': False
     }
 }
 
@@ -161,19 +169,28 @@ HTML_TEMPLATE = '''
     <h1>🌅 Delling Hub</h1>
     <div class="grid">
         {% for key, svc in services.items() %}
-        <button class="btn {% if svc.sdr %}sdr{% endif %}" onclick="startService('{{ key }}', '{{ svc.url }}')">
+        <button class="btn {% if svc.sdr %}sdr{% endif %}" onclick="startService('{{ key }}', '{{ svc.url }}', {{ 'true' if svc.always_on else 'false' }})">
             <span class="icon">{{ svc.icon }}</span>
             <span class="name">{{ svc.name }}</span>
+            {% if not svc.always_on %}
             <span class="status" id="status-{{ key }}">-</span>
+            {% endif %}
         </button>
         {% endfor %}
     </div>
     <div class="footer">SDR services (orange) share the radio - only one runs at a time</div>
 
     <script>
-        async function startService(key, url) {
+        async function startService(key, url, alwaysOn) {
             const btn = event.currentTarget;
             btn.classList.add('loading');
+            
+            // For always-on services, just open the URL directly
+            if (alwaysOn) {
+                window.open(url, '_blank');
+                btn.classList.remove('loading');
+                return;
+            }
             
             try {
                 const response = await fetch('/api/start/' + key, { method: 'POST' });
@@ -267,6 +284,9 @@ def start_service(service_key):
 def get_status():
     status = {}
     for key, svc in SERVICES.items():
+        # Skip always-on services
+        if svc.get('always_on', False):
+            continue
         if svc['service']:
             status[key] = is_service_running(svc['service'])
         else:
