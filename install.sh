@@ -366,9 +366,10 @@ phase4_always_on() {
     print_step "Installing Tinymedia..."
     if [ -d /opt/tinymedia ]; then
         print_info "Tinymedia directory exists, updating..."
-        cd /opt/tinymedia && git pull
+        cd /opt/tinymedia && sudo git pull
     else
-        git clone https://github.com/tronba/Tinymedia /opt/tinymedia
+        sudo git clone https://github.com/tronba/Tinymedia /opt/tinymedia
+        sudo chown -R $DELLING_USER:$DELLING_USER /opt/tinymedia
     fi
     
     # Install Python deps
