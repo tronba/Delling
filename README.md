@@ -11,9 +11,7 @@ Delling – named after the Norse god of dawn – is a self-contained hub that r
 - **Software-defined radio** – Multiple SDR applications (one at a time):
   - FM Radio (AM/FM, Marine VHF, Aviation, PMR446)
   - DAB+ Radio (digital radio)
-  - ADS-B aircraft tracking
   - AIS ship tracking
-  - OpenWebRX (wideband radio receiver)
 - **Local communication** – Mesh messaging via Meshtastic and Heltec V3
 - **Media server** – Stream and share files from USB storage
 - **Offline knowledge** – Kiwix server with Wikipedia and other archives
@@ -97,8 +95,6 @@ This allows direct playback in mobile browsers without transcoding.
 4. **Follow the prompts**:
    - WiFi network name (default: Delling)
    - WiFi channel (default: 6)
-   - USB mount point (default: /media/usb)
-   - OpenWebRX admin password
 
 The installation takes 15-30 minutes depending on your hardware and internet speed.
 
@@ -129,12 +125,10 @@ Once rebooted, Delling will be ready:
 - **DAB+ Radio** - Digital radio receiver
 - **Media Server** - Browse and stream media from USB
 - **Kiwix** - Offline Wikipedia and educational content
-- **Aircraft Tracking** - Live ADS-B flight tracking
 - **Ship Tracking** - Live AIS marine tracking
 - **Meshtastic** - Mesh messaging (requires Heltec V3)
-- **OpenWebRX** - Advanced wideband SDR receiver
 
-**Note:** Only one SDR service (FM/DAB/ADS-B/AIS/OpenWebRX) can run at a time. The system automatically stops other SDR services when you start a new one.
+**Note:** Only one SDR service (FM/DAB/AIS) can run at a time. The system automatically stops other SDR services when you start a new one.
 
 ---
 
@@ -142,13 +136,11 @@ Once rebooted, Delling will be ready:
 
 | Service | Port |
 |---------|------|
-| Delling Dashboard | 1337 |
+| Delling Dashboard | 8080 |
 | FM Radio | 10100 |
 | DAB+ Radio | 7979 |
 | Tinymedia (media server) | 5000 |
 | Kiwix | 8000 |
-| OpenWebRX | 8073 |
-| Aircraft Tracking (dump1090) | 8080 |
 | Ship Tracking (AIS-catcher) | 8100 |
 | Meshtastic | 192.168.4.10 |
 
@@ -184,7 +176,7 @@ All services are managed via systemd. You can control them manually if needed:
 
 ```bash
 # Stop all SDR services
-sudo systemctl stop rtl-fm-radio welle-cli openwebrx dump1090-fa aiscatcher
+sudo systemctl stop rtl-fm-radio welle-cli aiscatcher
 
 # Start a specific service
 sudo systemctl start rtl-fm-radio
@@ -209,8 +201,6 @@ MIT License - See LICENSE file for details
 Built with open-source software:
 
 - [Flask](https://flask.palletsprojects.com/) - Python web framework
-- [OpenWebRX+](https://github.com/luarvique/openwebrx) - SDR web receiver
-- [dump1090-fa](https://github.com/flightaware/dump1090) - ADS-B decoder
 - [AIS-catcher](https://github.com/jvde-github/AIS-catcher) - AIS receiver
 - [Kiwix](https://www.kiwix.org/) - Offline content server
 - [Meshtastic](https://meshtastic.org/) - Mesh networking

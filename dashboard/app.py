@@ -41,14 +41,6 @@ SERVICES = {
         'sdr': False,
         'always_on': True
     },
-    'aircraft': {
-        'name': 'Aircraft',
-        'icon': '✈️',
-        'service': 'dump1090-fa',
-        'url': 'http://192.168.4.1:8080',
-        'sdr': True,
-        'always_on': False
-    },
     'ships': {
         'name': 'Ships',
         'icon': '🚢',
@@ -65,17 +57,9 @@ SERVICES = {
         'sdr': False,
         'always_on': True
     },
-    'openwebrx': {
-        'name': 'OpenWebRX',
-        'icon': '📡',
-        'service': 'openwebrx',
-        'url': 'http://192.168.4.1:8073',
-        'sdr': True,
-        'always_on': False
-    }
 }
 
-SDR_SERVICES = ['rtl-fm-radio', 'welle-cli', 'dump1090-fa', 'aiscatcher', 'openwebrx']
+SDR_SERVICES = ['rtl-fm-radio', 'welle-cli', 'aiscatcher']
 
 HTML_TEMPLATE = '''
 <!DOCTYPE html>
@@ -294,4 +278,4 @@ def get_status():
     return jsonify(status)
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=1337, debug=False)
+    app.run(host='0.0.0.0', port=8080, debug=False)
