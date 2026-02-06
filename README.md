@@ -51,6 +51,8 @@ The USB drive must be formatted as **exFAT** for cross-platform compatibility.
     └── .zim files...
 ```
 
+> **Important:** Kiwix `.zim` filenames must not contain spaces. Rename files like `wikipedia_en_all 2024.zim` to `wikipedia_en_all_2024.zim` before use.
+
 ### Video Format
 
 For maximum phone/tablet compatibility, encode video as:
@@ -66,28 +68,30 @@ This allows direct playback in mobile browsers without transcoding.
 
 ### Prerequisites
 - Fresh Raspberry Pi OS (Bookworm) or Armbian install
-- Internet connection via Ethernet (for initial setup)
+- **Ethernet connection required** (WiFi will be reconfigured during install)
+- USB drive connected and mounted at `/media/usb` (for Tinymedia)
 - Basic Linux command line knowledge
+
+> **Warning:** Do NOT run the installer over WiFi SSH. The script reconfigures WiFi as an access point, which will disconnect you. Always use Ethernet.
 
 ### Quick Install
 
-1. **Set WiFi country** (Raspberry Pi only):
+1. **Set WiFi country** (Raspberry Pi only — required for WiFi AP to work):
    ```bash
    sudo raspi-config
-   # Navigate to: Localisation Options → WLAN Country → Select your country
    ```
+   Navigate to: `Localisation Options` → `WLAN Country` → Select your country, then reboot if prompted.
 
 2. **Update system and install Git**:
    ```bash
-   sudo apt update
-   sudo apt upgrade
-   sudo apt install git
+   sudo apt update && sudo apt upgrade -y
+   sudo apt install -y git
    ```
 
 3. **Clone and run installer**:
    ```bash
-   git clone https://github.com/tronba/Delling
-   cd Delling
+   git clone https://github.com/tronba/Delling ~/Delling
+   cd ~/Delling
    chmod +x install.sh
    ./install.sh
    ```

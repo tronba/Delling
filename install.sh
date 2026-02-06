@@ -31,6 +31,9 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# Track failures for end-of-install report
+declare -a FAILURES=()
+
 # ═══════════════════════════════════════════════════════════════════════════
 # HELPER FUNCTIONS
 # ═══════════════════════════════════════════════════════════════════════════
@@ -53,6 +56,11 @@ print_info() {
 
 print_error() {
     echo -e "${RED}[✗]${NC} $1"
+}
+
+record_failure() {
+    FAILURES+=("$1")
+    print_error "$1"
 }
 
 check_root() {
@@ -134,6 +142,14 @@ ask_questions() {
         echo "Installation cancelled."
         exit 0
     fi
+
+    # Early warning about USB drive requirement
+    echo ""
+    print_info "NOTE: Tinymedia requires a USB drive (exFAT) to be connected."
+    print_info "If no USB drive is present, Tinymedia install will be skipped."
+    print_info "You can run it manually later."
+    echo ""
+    read -p "Press Enter to continue..." -r
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -198,13 +214,16 @@ phase2_network() {
 
     # --- Captive Portal: DNS redirect ---
     print_step "Configuring DNS redirect (all domains → 192.168.4.1)..."
+    sudo mkdir -p /etc/NetworkManager/dnsmasq-shared.d
     echo 'address=/#/192.168.4.1' | sudo tee /etc/NetworkManager/dnsmasq-shared.d/captive.conf > /dev/null
 
     # --- Captive Portal: HTTP redirect (port 80 → 8080 dashboard) ---
     print_step "Configuring HTTP redirect (port 80 → 8080)..."
-    sudo nft add table ip captive 2>/dev/null || true
-    sudo nft add chain ip captive prerouting '{ type nat hook prerouting priority -100 ; }' 2>/dev/null || true
-    sudo nft add rule ip captive prerouting iifname "wlan0" tcp dport 80 redirect to :8080 2>/dev/null || true
+    # Flush existing captive table to allow re-runs
+    sudo nft delete table ip captive 2>/dev/null || true
+    sudo nft add table ip captive
+    sudo nft add chain ip captive prerouting '{ type nat hook prerouting priority -100 ; }'
+    sudo nft add rule ip captive prerouting iifname "wlan0" tcp dport 80 redirect to :8080
     sudo nft list ruleset | sudo tee /etc/nftables.conf > /dev/null
     sudo systemctl enable nftables
 
@@ -263,21 +282,22 @@ phase4_always_on() {
     print_step "Cloning Tinymedia..."
     if [ -d "$SCRIPT_DIR/Tinymedia" ]; then
         print_info "Tinymedia directory exists, updating..."
-        cd "$SCRIPT_DIR/Tinymedia" && git pull
+        pushd "$SCRIPT_DIR/Tinymedia" > /dev/null && git pull && popd > /dev/null
     else
         git clone https://github.com/tronba/Tinymedia "$SCRIPT_DIR/Tinymedia"
     fi
 
     print_step "Running Tinymedia installer (AUTO_YES=1)..."
     print_info "This requires a USB drive to be connected."
-    cd "$SCRIPT_DIR/Tinymedia"
+    pushd "$SCRIPT_DIR/Tinymedia" > /dev/null
     if AUTO_YES=1 bash install_arm_no_venv.sh; then
         print_step "Tinymedia installed successfully!"
     else
-        print_info "Tinymedia auto-install did not complete."
+        record_failure "Tinymedia: Auto-install failed (USB drive may be missing)"
         print_info "You can run it manually later:"
         print_info "  cd $SCRIPT_DIR/Tinymedia && bash install_arm_no_venv.sh"
     fi
+    popd > /dev/null
 
     # ─── Kiwix ───
     print_step "Creating Kiwix startup script..."
@@ -377,17 +397,17 @@ phase6_sdr_apps() {
     print_step "Cloning FM/VHF Radio (rtl_fm_python_webgui)..."
     if [ -d "$SCRIPT_DIR/rtl_fm_webgui" ]; then
         print_info "rtl_fm_webgui directory exists, updating..."
-        cd "$SCRIPT_DIR/rtl_fm_webgui" && git pull
+        pushd "$SCRIPT_DIR/rtl_fm_webgui" > /dev/null && git pull && popd > /dev/null
     else
         git clone https://github.com/tronba/rtl_fm_python_webgui "$SCRIPT_DIR/rtl_fm_webgui"
     fi
 
     print_step "Building rtl_fm C library..."
-    cd "$SCRIPT_DIR/rtl_fm_webgui"
+    pushd "$SCRIPT_DIR/rtl_fm_webgui" > /dev/null
     if bash build.sh; then
         print_step "Build successful!"
     else
-        print_error "Build failed. FM Radio may not work."
+        record_failure "FM Radio: build.sh failed (missing dependencies?)"
         print_info "You can try manually: cd $SCRIPT_DIR/rtl_fm_webgui && ./build.sh"
     fi
 
@@ -412,17 +432,17 @@ EOF
 
     # Use the upstream install mechanism
     print_step "Installing FM Radio service (radio-control.sh install)..."
-    cd "$SCRIPT_DIR/rtl_fm_webgui"
     chmod +x radio-control.sh
     bash radio-control.sh install
     sudo systemctl disable rtl-fm-radio 2>/dev/null || true
+    popd > /dev/null
 
     # ─── welle-cli (DAB+ Radio) ───
     # welle.io was already installed in Phase 1 via apt
     print_step "Cloning custom welle-cli web UI..."
     if [ -d "$SCRIPT_DIR/simple-webgui-welle-cli" ]; then
         print_info "welle-cli web UI directory exists, updating..."
-        cd "$SCRIPT_DIR/simple-webgui-welle-cli" && git pull
+        pushd "$SCRIPT_DIR/simple-webgui-welle-cli" > /dev/null && git pull && popd > /dev/null
     else
         git clone https://github.com/tronba/simple-webgui-welle-cli "$SCRIPT_DIR/simple-webgui-welle-cli"
     fi
@@ -466,7 +486,7 @@ EOF
     if sudo bash -c "$(wget -q -O - https://raw.githubusercontent.com/abcd567a/install-aiscatcher/master/install-aiscatcher.sh)"; then
         print_step "AIS-catcher installed!"
     else
-        print_info "AIS-catcher install may have failed. You can try manually later."
+        record_failure "AIS-catcher: Upstream install script failed"
     fi
     sudo systemctl disable aiscatcher 2>/dev/null || true
 
@@ -516,6 +536,20 @@ main() {
     phase7_finalize
 
     print_header "Installation Complete!"
+
+    # Report any failures
+    if [ ${#FAILURES[@]} -gt 0 ]; then
+        echo -e "${RED}╔═══════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${RED}║  ISSUES DETECTED (${#FAILURES[@]})                                           ${NC}"
+        echo -e "${RED}╚═══════════════════════════════════════════════════════════════╝${NC}"
+        echo ""
+        for failure in "${FAILURES[@]}"; do
+            echo -e "  ${RED}•${NC} $failure"
+        done
+        echo ""
+        echo -e "${YELLOW}Review the issues above. Some services may need manual setup.${NC}"
+        echo ""
+    fi
 
     echo -e "${GREEN}Delling has been installed successfully!${NC}"
     echo ""
