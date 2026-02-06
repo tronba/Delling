@@ -16,9 +16,9 @@ Delling – named after the Norse god of dawn – is a self-contained hub that r
     - Aviation
     - PMR446 walkie-talkie
     - Hunter/Gather Radio 
-  - ADS-B aircraft tracking (dump1090-fa)
+  - ADS-B aircraft tracking (dump1090-fa) (we drop this for now)
   - AIS ship tracking (AIS-catcher)
-  - OpenWebRX+ (wideband radio receiver)
+  - OpenWebRX+ (wideband radio receiver) -(we drop this for now)
 - **Local communication** – Mesh messaging via Meshtastic and Heltec V3
 - **Media server** – Stream and share files from USB storage
 - **Offline knowledge** – Kiwix server with Wikipedia and other archives
@@ -127,16 +127,8 @@ sudo nft list ruleset | sudo tee /etc/nftables.conf
 sudo systemctl enable nftables
 ```
 
-### 4. OliveTin (Main dashboard)
+### 4. Use the one from install_old (Main dashboard)
 
-```bash
-wget https://github.com/OliveTin/OliveTin/releases/latest/download/OliveTin_linux_arm64.deb
-sudo dpkg -i OliveTin_linux_arm64.deb
-
-# Configure
-sudo nano /etc/OliveTin/config.yaml
-
-sudo systemctl enable --now OliveTin
 ```
 
 ### 5. SDR setup
@@ -157,7 +149,7 @@ sudo udevadm control --reload-rules
 sudo udevadm trigger
 ```
 
-### 6. OpenWebRX+ (wideband SDR)
+### 6. OpenWebRX+ (wideband SDR) ( think we drop this for now)
 
 ```bash
 curl -s https://luarvique.github.io/ppa/openwebrx-plus.gpg | sudo gpg --yes --dearmor -o /etc/apt/trusted.gpg.d/openwebrx-plus.gpg
@@ -173,7 +165,7 @@ sudo systemctl enable openwebrx
 sudo systemctl start openwebrx
 ```
 
-### 7. ADS-B aircraft tracking
+### 7. ADS-B aircraft tracking (we dropp this for now)
 
 ```bash
 sudo bash -c "$(wget -O - https://raw.githubusercontent.com/abcd567a/piaware-ubuntu-debian-amd64/master/install-dump1090-fa.sh)"

@@ -306,7 +306,7 @@ phase4_always_on() {
 
     cat > /opt/delling/scripts/start-kiwix.sh << 'KIWIXEOF'
 #!/bin/bash
-MOUNT_POINT="/media/usb"
+MOUNT_POINT="/media/$USER/usb"
 PORT=8000
 
 if ! mountpoint -q "$MOUNT_POINT"; then
