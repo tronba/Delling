@@ -307,17 +307,18 @@ phase4_always_on() {
     cat > /opt/delling/scripts/start-kiwix.sh << 'KIWIXEOF'
 #!/bin/bash
 MOUNT_POINT="/media/usb"
-KIWIX_FOLDER="kiwix"
 PORT=8000
-KIWIX_PATH="$MOUNT_POINT/$KIWIX_FOLDER"
 
 if ! mountpoint -q "$MOUNT_POINT"; then
     echo "No USB drive mounted at $MOUNT_POINT"
     exit 1
 fi
 
-if [ ! -d "$KIWIX_PATH" ]; then
-    echo "No kiwix folder found on USB drive"
+# Find kiwix folder (case-insensitive)
+KIWIX_PATH=$(find "$MOUNT_POINT" -maxdepth 1 -type d -iname "kiwix" 2>/dev/null | head -n 1)
+
+if [ -z "$KIWIX_PATH" ] || [ ! -d "$KIWIX_PATH" ]; then
+    echo "No kiwix folder found on USB drive (tried: kiwix, Kiwix, KIWIX)"
     exit 1
 fi
 

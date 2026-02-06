@@ -51,7 +51,7 @@ The USB drive must be formatted as **exFAT** for cross-platform compatibility.
     └── .zim files...
 ```
 
-> **Important:** Kiwix `.zim` filenames must not contain spaces. Rename files like `wikipedia_en_all 2024.zim` to `wikipedia_en_all_2024.zim` before use.
+> **Important:** Kiwix `.zim` filenames must not contain spaces. Rename files like `wikipedia_en_all 2024.zim` to `wikipedia_en_all_2024.zim` before use. The folder name `kiwix` is case-insensitive (`Kiwix`, `KIWIX`, etc. all work).
 
 ### Video Format
 
