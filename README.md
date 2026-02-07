@@ -12,6 +12,7 @@ Delling – named after the Norse god of dawn – is a self-contained hub that r
   - FM Radio (AM/FM, Marine VHF, Aviation, PMR446)
   - DAB+ Radio (digital radio)
   - AIS ship tracking
+- **Offline maps** – Leaflet map viewer with MBTiles tile server, AIS ship overlay
 - **Local communication** – Mesh messaging via Meshtastic and Heltec V3
 - **Media server** – Stream and share files from USB storage
 - **Offline knowledge** – Kiwix server with Wikipedia and other archives
@@ -47,11 +48,15 @@ The USB drive must be formatted as **exFAT** for cross-platform compatibility.
 │   │   └── movies...
 │   └── Audio/
 │       └── music...
-└── kiwix/
-    └── .zim files...
+├── kiwix/
+│   └── .zim files...
+└── maps/
+    └── .mbtiles files...
 ```
 
-> **Important:** Kiwix `.zim` filenames must not contain spaces. Rename files like `wikipedia_en_all 2024.zim` to `wikipedia_en_all_2024.zim` before use. The folder name `kiwix` is case-insensitive (`Kiwix`, `KIWIX`, etc. all work).
+> **Important:** Kiwix `.zim` filenames must not contain spaces. Rename files like `wikipedia_en_all 2024.zim` to `wikipedia_en_all_2024.zim` before use. The folder names `kiwix` and `maps` are case-insensitive (`Kiwix`, `KIWIX`, `Maps`, `MAPS`, etc. all work).
+
+> **Map tiles:** Download regional `.mbtiles` files from [OpenMapTiles](https://openmaptiles.org/) or [Protomaps](https://protomaps.com/) before going offline. Place them in the `maps/` folder on your USB drive.
 
 ### Video Format
 
@@ -127,6 +132,7 @@ Once rebooted, Delling will be ready:
 
 - **FM Radio** - AM/FM radio streaming with web interface
 - **DAB+ Radio** - Digital radio receiver
+- **Maps** - Offline map viewer with live AIS ship overlay
 - **Media Server** - Browse and stream media from USB
 - **Kiwix** - Offline Wikipedia and educational content
 - **Ship Tracking** - Live AIS marine tracking
@@ -143,6 +149,7 @@ Once rebooted, Delling will be ready:
 | Delling Dashboard | 8080 |
 | FM Radio | 10100 |
 | DAB+ Radio | 7979 |
+| Maps (tile server + viewer) | 8082 |
 | Tinymedia (media server) | 5000 |
 | Kiwix | 8000 |
 | Ship Tracking (AIS-catcher) | 8100 |
@@ -211,6 +218,7 @@ Built with open-source software:
 - [welle.io](https://github.com/AlbrechtL/welle.io) - DAB/DAB+ receiver
 - [rtl_fm_python_webgui](https://github.com/tronba/rtl_fm_python_webgui) - FM radio interface
 - [Tinymedia](https://github.com/tronba/Tinymedia) - Lightweight media server
+- [Leaflet](https://leafletjs.com/) - Interactive map library
 
 ---
 

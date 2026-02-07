@@ -187,6 +187,59 @@ WantedBy=multi-user.target
 
 ---
 
+### 6. Delling Maps (Offline Map Viewer + AIS Overlay)
+
+**Purpose:** Serve offline map tiles from MBTiles files and display them in a Leaflet-based map viewer. Automatically overlays AIS ship positions when AIS-catcher is running.
+
+| Property | Value |
+|----------|-------|
+| Source | Built-in (`ais-map/` directory) |
+| Port | 8082 |
+| Service | `delling-maps.service` |
+| Auto-start | ✅ Yes |
+| Content | `/media/usb/maps/*.mbtiles` |
+| Dependencies | Flask, Leaflet (downloaded during install) |
+
+**Features:**
+- Serves raster map tiles directly from MBTiles (SQLite) — no external tile server binary needed
+- Auto-discovers `.mbtiles` files on USB (case-insensitive `maps` folder)
+- AIS ship overlay with SVG markers showing heading and speed
+- Layer switcher when multiple tilesets are available
+- Fully offline — Leaflet JS/CSS bundled locally
+- CORS-enabled tile endpoints (other apps can use the tile server)
+
+**How it works:**
+1. Python Flask app reads tiles from MBTiles (SQLite) files
+2. Leaflet map viewer loads tiles from `http://192.168.4.1:8082/tiles/{name}/{z}/{x}/{y}`
+3. Ship overlay polls `http://192.168.4.1:8082/api/ships` (proxied from AIS-catcher on port 8100)
+
+**AIS Integration:**
+- The map app proxies ship data from AIS-catcher's REST API
+- When AIS-catcher is running (started via dashboard), ship positions appear automatically
+- When AIS-catcher is stopped, the map works normally without ships
+- No modification to AIS-catcher needed — the integration is non-invasive
+
+**USB folder structure:**
+```
+/media/usb/maps/         (case-insensitive: maps, Maps, MAPS)
+├── region.mbtiles       (e.g., norway.mbtiles)
+└── nautical.mbtiles     (optional: additional layers)
+```
+
+**Tile API (can be used by other services):**
+- `GET /api/tilesets` — list available tilesets with metadata
+- `GET /tiles/{name}/{z}/{x}/{y}` — XYZ tile endpoint
+- `GET /api/ships` — proxied AIS ship data
+
+**Service file:** `/etc/systemd/system/delling-maps.service`
+
+**Dependencies:**
+- USB drive mounted with `.mbtiles` files in `/media/usb/maps/`
+- Leaflet JS/CSS (downloaded during install)
+- AIS-catcher (optional, for ship overlay)
+
+---
+
 ## SDR Applications (Mutually Exclusive)
 
 > ⚠️ Only ONE of these can run at a time. OliveTin manages switching.
@@ -417,6 +470,7 @@ sleep 1
 | OliveTin | 1337 | ✅ | .deb |
 | Tinymedia | 5000 | ✅ | git clone + script |
 | Kiwix | 8000 | ✅ | apt + custom service |
+| Delling Maps | 8082 | ✅ | built-in (ais-map/) |
 | rtl_fm_webgui | 10100 | ❌ | git clone + build |
 | welle-cli | 7979 | ❌ | apt + custom service |
 | OpenWebRX+ | 8073 | ❌ | apt (custom repo) |

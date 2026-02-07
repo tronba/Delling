@@ -66,6 +66,7 @@ When users connect and open any webpage:
 | 7979 | welle-cli | DAB+ radio |
 | 8073 | OpenWebRX+ | Wideband SDR receiver |
 | 8080 | dump1090-fa | ADS-B aircraft tracking |
+| 8082 | Delling Maps | Offline map viewer + MBTiles tile server |
 | 8100 | AIS-catcher | Ship tracking |
 | 10100 | rtl_fm_webgui | FM/AM/VHF radio |
 
@@ -99,6 +100,7 @@ Only one SDR app can run at a time (single RTL-SDR dongle).
 |-----------|---------|----------------|--------------|
 | Tinymedia | File browser/streamer | git clone | tinymedia |
 | Kiwix | Offline wiki/ZIM | script (see README) | kiwix (custom) |
+| Delling Maps | Offline maps + AIS overlay | built-in (ais-map/) | delling-maps |
 
 ### Communication
 | Component | Purpose | Install Method | Notes |
@@ -123,8 +125,10 @@ Only one SDR app can run at a time (single RTL-SDR dongle).
 ├── Install files/
 │   ├── Android/
 │   └── Windows/
-└── kiwix/
-    └── *.zim files
+├── kiwix/
+│   └── *.zim files
+└── maps/
+    └── *.mbtiles files
 ```
 
 ### Filesystem

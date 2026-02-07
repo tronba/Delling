@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Delling Maps</title>
+    <link rel="stylesheet" href="/static/leaflet/leaflet.css">
+    <script src="/static/leaflet/leaflet.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body {
+            width: 100%; height: 100%; overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+        #map { width: 100%; height: 100%; background: #1a1a2e; }
+
+        /* Loading overlay */
+        #loading {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(26, 26, 46, 0.95);
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            z-index: 2000; color: #fff;
+            transition: opacity 0.5s;
+        }
+        #loading.hidden { opacity: 0; pointer-events: none; }
+        #loading h2 { margin-bottom: 12px; font-size: 24px; }
+        #loading p { color: #aaa; font-size: 14px; }
+
+        /* AIS status badge */
+        .ais-badge {
+            position: fixed; top: 12px; right: 12px; z-index: 1000;
+            padding: 6px 14px; border-radius: 20px;
+            font-size: 13px;
+            background: rgba(0,0,0,0.6); color: #888;
+            backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+            pointer-events: none;
+        }
+        .ais-badge.active { color: #4caf50; }
+
+        /* Back to Hub button */
+        .back-btn {
+            position: fixed; top: 12px; left: 12px; z-index: 1000;
+            padding: 8px 16px; border-radius: 10px; border: none;
+            background: rgba(0,0,0,0.6); color: #fff;
+            font-size: 14px; cursor: pointer;
+            backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+            text-decoration: none;
+        }
+        .back-btn:hover { background: rgba(0,0,0,0.8); }
+
+        /* No-maps overlay */
+        .no-maps {
+            position: fixed; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 1500; text-align: center;
+            color: #fff;
+            background: rgba(0,0,0,0.75);
+            padding: 30px 40px; border-radius: 16px;
+            max-width: 400px;
+        }
+        .no-maps h2 { margin-bottom: 12px; font-size: 20px; }
+        .no-maps p { color: #bbb; font-size: 14px; line-height: 1.7; }
+        .no-maps code {
+            background: rgba(255,255,255,0.12); padding: 2px 8px;
+            border-radius: 4px; font-size: 13px;
+        }
+
+        /* Ship popup */
+        .ship-popup { font-size: 13px; line-height: 1.6; min-width: 170px; }
+        .ship-popup .name {
+            font-weight: 700; font-size: 15px;
+            margin-bottom: 4px; color: #1a1a2e;
+        }
+        .ship-popup .row {
+            display: flex; justify-content: space-between; gap: 12px;
+        }
+        .ship-popup .label { color: #888; }
+        .ship-popup .value { font-weight: 500; }
+    </style>
+</head>
+<body>
+    <div id="loading">
+        <h2>&#x1f5fa;&#xfe0f; Delling Maps</h2>
+        <p>Loading map data&hellip;</p>
+    </div>
+
+    <a href="http://192.168.4.1:8080" class="back-btn">&larr; Hub</a>
+    <div class="ais-badge" id="ais-badge">AIS: &ndash;</div>
+    <div id="map"></div>
+
+    <script>
+    (function() {
+        /* ── Initialize map ────────────────────────────────────── */
+        var map = L.map('map', {
+            zoomControl: true,
+            attributionControl: true
+        }).setView([0, 0], 3);
+
+        var shipLayer = L.layerGroup().addTo(map);
+        var aisBadge = document.getElementById('ais-badge');
+        var loadingEl = document.getElementById('loading');
+
+        /* ── Ship SVG icon ─────────────────────────────────────── */
+        function createShipIcon(heading, speed) {
+            var color = speed > 0.5 ? '#4caf50' : '#ff9800';
+            var rot = heading || 0;
+            return L.divIcon({
+                className: '',
+                iconSize: [20, 20],
+                iconAnchor: [10, 10],
+                popupAnchor: [0, -12],
+                html: '<svg width="20" height="20" viewBox="0 0 20 20" ' +
+                      'style="transform:rotate(' + rot + 'deg)">' +
+                      '<polygon points="10,1 17,18 10,14 3,18" ' +
+                      'fill="' + color + '" stroke="#fff" stroke-width="1" opacity="0.9"/>' +
+                      '</svg>'
+            });
+        }
+
+        function createShipPopup(s) {
+            var name = s.shipname || s.name || 'Unknown';
+            var mmsi = s.mmsi || '\u2013';
+            var speed = s.speed != null ? s.speed.toFixed(1) + ' kn' : '\u2013';
+            var course = s.course != null ? Math.round(s.course) + '\u00b0' : '\u2013';
+            var heading = s.heading != null ? Math.round(s.heading) + '\u00b0' : '\u2013';
+            var dest = s.destination || '';
+
+            var html = '<div class="ship-popup">' +
+                '<div class="name">' + name + '</div>' +
+                '<div class="row"><span class="label">MMSI</span><span class="value">' + mmsi + '</span></div>' +
+                '<div class="row"><span class="label">Speed</span><span class="value">' + speed + '</span></div>' +
+                '<div class="row"><span class="label">Course</span><span class="value">' + course + '</span></div>' +
+                '<div class="row"><span class="label">Heading</span><span class="value">' + heading + '</span></div>';
+            if (dest) {
+                html += '<div class="row"><span class="label">Dest</span><span class="value">' + dest + '</span></div>';
+            }
+            html += '</div>';
+            return html;
+        }
+
+        /* ── Load tilesets from server ─────────────────────────── */
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', '/api/tilesets');
+        xhr.onload = function() {
+            loadingEl.classList.add('hidden');
+
+            var tilesets;
+            try { tilesets = JSON.parse(xhr.responseText); }
+            catch(e) { tilesets = []; }
+
+            if (tilesets.length === 0) {
+                var el = document.createElement('div');
+                el.className = 'no-maps';
+                el.innerHTML = '<h2>No Map Tiles Found</h2>' +
+                    '<p>Place <code>.mbtiles</code> files in a folder ' +
+                    'named <code>maps</code> on your USB drive.</p>' +
+                    '<p style="margin-top:12px;color:#888;font-size:12px;">' +
+                    'Tip: Download regional tiles from<br>' +
+                    'OpenMapTiles or similar before going offline.</p>';
+                document.body.appendChild(el);
+                return;
+            }
+
+            var baseLayers = {};
+            var first = true;
+
+            for (var i = 0; i < tilesets.length; i++) {
+                var ts = tilesets[i];
+                var layer = L.tileLayer('/tiles/' + ts.name + '/{z}/{x}/{y}', {
+                    minZoom: ts.minzoom,
+                    maxZoom: ts.maxzoom,
+                    attribution: ts.description || ts.name
+                });
+                baseLayers[ts.description || ts.name] = layer;
+
+                if (first) {
+                    layer.addTo(map);
+                    first = false;
+
+                    /* Center map on tileset */
+                    if (ts.center) {
+                        var cp = ts.center.split(',');
+                        if (cp.length >= 2) {
+                            var zoom = cp.length >= 3 ? parseInt(cp[2], 10) : 10;
+                            map.setView([parseFloat(cp[1]), parseFloat(cp[0])], zoom);
+                        }
+                    } else if (ts.bounds) {
+                        var b = ts.bounds.split(',');
+                        if (b.length === 4) {
+                            map.fitBounds([
+                                [parseFloat(b[1]), parseFloat(b[0])],
+                                [parseFloat(b[3]), parseFloat(b[2])]
+                            ]);
+                        }
+                    }
+                }
+            }
+
+            /* Layer control when multiple tilesets are available */
+            if (tilesets.length > 1) {
+                L.control.layers(baseLayers, {'\ud83d\udea2 Ships': shipLayer}).addTo(map);
+            }
+        };
+        xhr.onerror = function() {
+            loadingEl.classList.add('hidden');
+        };
+        xhr.send();
+
+        /* ── AIS ship updates ──────────────────────────────────── */
+        function updateShips() {
+            var req = new XMLHttpRequest();
+            req.open('GET', '/api/ships');
+            req.timeout = 5000;
+            req.onload = function() {
+                var data;
+                try { data = JSON.parse(req.responseText); }
+                catch(e) { return; }
+
+                /* Handle both array and {ships:[]} response formats */
+                var ships = Array.isArray(data) ? data : (data.ships || []);
+
+                shipLayer.clearLayers();
+                var count = 0;
+
+                for (var i = 0; i < ships.length; i++) {
+                    var s = ships[i];
+                    var lat = s.lat != null ? s.lat : s.latitude;
+                    var lon = s.lon != null ? s.lon : (s.longitude != null ? s.longitude : s.lng);
+                    if (lat == null || lon == null) continue;
+                    if (lat === 0 && lon === 0) continue;
+
+                    var speed = s.speed != null ? s.speed : (s.sog != null ? s.sog : 0);
+                    var hdg = s.heading != null ? s.heading
+                            : (s.hdg != null ? s.hdg
+                            : (s.course != null ? s.course
+                            : (s.cog != null ? s.cog : 0)));
+                    var crs = s.course != null ? s.course : (s.cog != null ? s.cog : null);
+
+                    var marker = L.marker([lat, lon], {
+                        icon: createShipIcon(hdg, speed)
+                    }).bindPopup(createShipPopup({
+                        shipname: s.shipname || s.name,
+                        mmsi: s.mmsi,
+                        speed: s.speed != null ? s.speed : s.sog,
+                        course: crs,
+                        heading: s.heading != null ? s.heading : s.hdg,
+                        destination: s.destination
+                    }));
+
+                    shipLayer.addLayer(marker);
+                    count++;
+                }
+
+                aisBadge.textContent = 'AIS: ' + count + ' ship' + (count !== 1 ? 's' : '');
+                aisBadge.className = 'ais-badge' + (count > 0 ? ' active' : '');
+            };
+            req.onerror = function() {
+                aisBadge.textContent = 'AIS: off';
+                aisBadge.className = 'ais-badge';
+            };
+            req.ontimeout = req.onerror;
+            req.send();
+        }
+
+        /* Poll AIS every 10 seconds */
+        updateShips();
+        setInterval(updateShips, 10000);
+    })();
+    </script>
+</body>
+</html>

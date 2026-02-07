@@ -43,6 +43,14 @@ SERVICES = {
         'sdr': False,
         'always_on': True
     },
+    'maps': {
+        'name': 'Maps',
+        'icon': '🗺️',
+        'service': 'delling-maps',
+        'url': 'http://192.168.4.1:8082',
+        'sdr': False,
+        'always_on': True
+    },
     'ships': {
         'name': 'Ships',
         'icon': '🚢',
@@ -195,7 +203,7 @@ HTML_TEMPLATE = '''
                     // Delay to let SDR service fully initialize
                     setTimeout(() => {
                         window.open(url, '_blank');
-                    }, 3500);
+                    }, 3000);
                 }
             } catch (err) {
                 console.error('Error:', err);

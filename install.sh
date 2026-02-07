@@ -10,6 +10,7 @@
 #   • Multi-mode Radio (rtl_fm_python_webgui)
 #   • DAB+ Radio (welle-cli + custom web UI)
 #   • AIS Ship Tracking (AIS-catcher)
+#   • Offline Maps (Leaflet + MBTiles tile server)
 #   • Tinymedia (media server)
 #   • Kiwix (offline Wikipedia)
 #
@@ -98,6 +99,7 @@ ask_questions() {
     echo "  • Delling Dashboard (service control panel)"
     echo "  • Multi-mode Radio, DAB+ Radio"
     echo "  • AIS Ship Tracking"
+    echo "  • Offline Maps (Leaflet + AIS overlay)"
     echo "  • Tinymedia (media server)"
     echo "  • Kiwix (offline Wikipedia)"
     echo ""
@@ -134,6 +136,7 @@ ask_questions() {
     echo "    Tinymedia ........... port 5000"
     echo "    Kiwix ............... port 8000"
     echo "    AIS Ship Tracking ... port 8100"
+    echo "    Offline Maps ........ port 8082"
     echo ""
 
     read -p "Proceed with installation? [Y/n] " -n 1 -r
@@ -272,7 +275,7 @@ EOF
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
-# PHASE 4: ALWAYS-ON SERVICES (Tinymedia + Kiwix)
+# PHASE 4: ALWAYS-ON SERVICES (Tinymedia + Kiwix + Maps)
 # ═══════════════════════════════════════════════════════════════════════════
 
 phase4_always_on() {
@@ -306,11 +309,19 @@ phase4_always_on() {
 
     cat > /opt/delling/scripts/start-kiwix.sh << 'KIWIXEOF'
 #!/bin/bash
-MOUNT_POINT="/media/$USER/usb"
 PORT=8000
 
-if ! mountpoint -q "$MOUNT_POINT"; then
-    echo "No USB drive mounted at $MOUNT_POINT"
+# Try both common USB mount points
+MOUNT_POINT=""
+for candidate in "/media/usb" "/media/$USER/usb"; do
+    if mountpoint -q "$candidate" 2>/dev/null || [ -d "$candidate" ]; then
+        MOUNT_POINT="$candidate"
+        break
+    fi
+done
+
+if [ -z "$MOUNT_POINT" ]; then
+    echo "No USB drive mounted at /media/usb or /media/$USER/usb"
     exit 1
 fi
 
@@ -337,13 +348,14 @@ KIWIXEOF
     chmod +x /opt/delling/scripts/start-kiwix.sh
 
     print_step "Creating Kiwix service..."
-    sudo tee /etc/systemd/system/kiwix.service > /dev/null << 'EOF'
+    sudo tee /etc/systemd/system/kiwix.service > /dev/null << EOF
 [Unit]
 Description=Kiwix Offline Knowledge Server
 After=network.target local-fs.target
 
 [Service]
 Type=simple
+User=$DELLING_USER
 ExecStart=/opt/delling/scripts/start-kiwix.sh
 Restart=on-failure
 RestartSec=10
@@ -354,6 +366,49 @@ EOF
 
     sudo systemctl daemon-reload
     sudo systemctl enable kiwix
+
+    # ─── Offline Maps (Leaflet + MBTiles tile server) ───
+    print_step "Setting up offline map viewer..."
+
+    # Download Leaflet for offline use
+    LEAFLET_VERSION="1.9.4"
+    mkdir -p "$SCRIPT_DIR/ais-map/static/leaflet/images"
+
+    print_step "Downloading Leaflet ${LEAFLET_VERSION} for offline use..."
+    if wget -q -O "$SCRIPT_DIR/ais-map/static/leaflet/leaflet.js" \
+        "https://unpkg.com/leaflet@${LEAFLET_VERSION}/dist/leaflet.js" && \
+       wget -q -O "$SCRIPT_DIR/ais-map/static/leaflet/leaflet.css" \
+        "https://unpkg.com/leaflet@${LEAFLET_VERSION}/dist/leaflet.css"; then
+        # Leaflet marker images
+        for img in marker-icon.png marker-icon-2x.png marker-shadow.png; do
+            wget -q -O "$SCRIPT_DIR/ais-map/static/leaflet/images/$img" \
+                "https://unpkg.com/leaflet@${LEAFLET_VERSION}/dist/images/$img"
+        done
+        print_step "Leaflet downloaded successfully!"
+    else
+        record_failure "Maps: Failed to download Leaflet (no internet?)"
+    fi
+
+    print_step "Creating map viewer service..."
+    sudo tee /etc/systemd/system/delling-maps.service > /dev/null << EOF
+[Unit]
+Description=Delling Maps (Offline Map Viewer + Tile Server)
+After=network.target local-fs.target
+
+[Service]
+Type=simple
+User=$DELLING_USER
+WorkingDirectory=$SCRIPT_DIR/ais-map
+ExecStart=/usr/bin/python3 $SCRIPT_DIR/ais-map/app.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    sudo systemctl daemon-reload
+    sudo systemctl enable delling-maps
 
     print_step "Phase 4 complete!"
 }
@@ -510,11 +565,15 @@ phase7_finalize() {
     print_step "Enabling auto-start services..."
     sudo systemctl enable delling-dashboard
     sudo systemctl enable kiwix
+    sudo systemctl enable delling-maps
     sudo systemctl enable nftables
     # tinymedia is enabled by its own installer (if it ran successfully)
 
     print_step "Starting dashboard..."
     sudo systemctl start delling-dashboard
+
+    print_step "Starting map server..."
+    sudo systemctl start delling-maps
 
     print_step "Phase 7 complete!"
 }
@@ -558,9 +617,12 @@ main() {
     echo "  ✓ Dashboard ............ port 8080  (auto-start)"
     echo "  ✓ Tinymedia ............ port 5000  (auto-start)"
     echo "  ✓ Kiwix ................ port 8000  (auto-start, needs USB)"
+    echo "  ✓ Maps ................. port 8082  (auto-start, needs USB)"
     echo "  ✓ Multi-mode Radio ..... port 10100 (on-demand via dashboard)"
     echo "  ✓ DAB+ Radio ........... port 7979  (on-demand via dashboard)"
     echo "  ✓ AIS Ship Tracking .... port 8100  (on-demand via dashboard)"
+    echo ""
+    echo "  Map viewer shows AIS ships automatically when AIS is running."
     echo ""
     if ! systemctl is-active tinymedia &>/dev/null; then
         echo -e "${YELLOW}NOTE: Tinymedia may need manual setup:${NC}"
