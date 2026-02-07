@@ -7,7 +7,7 @@
 # This script installs and configures:
 #   • WiFi Access Point with captive portal
 #   • Delling Dashboard (service control panel)
-#   • FM/VHF Radio (rtl_fm_python_webgui)
+#   • Multi-mode Radio (rtl_fm_python_webgui)
 #   • DAB+ Radio (welle-cli + custom web UI)
 #   • AIS Ship Tracking (AIS-catcher)
 #   • Tinymedia (media server)
@@ -96,7 +96,7 @@ ask_questions() {
     echo "This script will install and configure:"
     echo "  • WiFi Access Point (captive portal)"
     echo "  • Delling Dashboard (service control panel)"
-    echo "  • FM/VHF Radio, DAB+ Radio"
+    echo "  • Multi-mode Radio, DAB+ Radio"
     echo "  • AIS Ship Tracking"
     echo "  • Tinymedia (media server)"
     echo "  • Kiwix (offline Wikipedia)"
@@ -129,7 +129,7 @@ ask_questions() {
     echo ""
     echo "  Services to install:"
     echo "    Dashboard ........... port 8080"
-    echo "    FM/VHF Radio ........ port 10100"
+    echo "    Multi-mode Radio .... port 10100"
     echo "    DAB+ Radio .......... port 7979"
     echo "    Tinymedia ........... port 5000"
     echo "    Kiwix ............... port 8000"
@@ -394,8 +394,8 @@ EOF
 phase6_sdr_apps() {
     print_header "Phase 6: SDR Applications"
 
-    # ─── rtl_fm_python_webgui (FM/VHF Radio) ───
-    print_step "Cloning FM/VHF Radio (rtl_fm_python_webgui)..."
+    # ─── rtl_fm_python_webgui (Multi-mode Radio) ───
+    print_step "Cloning Multi-mode Radio (rtl_fm_python_webgui)..."
     if [ -d "$SCRIPT_DIR/rtl_fm_webgui" ]; then
         print_info "rtl_fm_webgui directory exists, updating..."
         pushd "$SCRIPT_DIR/rtl_fm_webgui" > /dev/null && git pull && popd > /dev/null
@@ -408,7 +408,7 @@ phase6_sdr_apps() {
     if bash build.sh; then
         print_step "Build successful!"
     else
-        record_failure "FM Radio: build.sh failed (missing dependencies?)"
+        record_failure "Multi-mode Radio: build.sh failed (missing dependencies?)"
         print_info "You can try manually: cd $SCRIPT_DIR/rtl_fm_webgui && ./build.sh"
     fi
 
@@ -432,7 +432,7 @@ WantedBy=multi-user.target
 EOF
 
     # Use the upstream install mechanism
-    print_step "Installing FM Radio service (radio-control.sh install)..."
+    print_step "Installing Multi-mode Radio service (radio-control.sh install)..."
     chmod +x radio-control.sh
     bash radio-control.sh install
     sudo systemctl disable rtl-fm-radio 2>/dev/null || true
@@ -558,7 +558,7 @@ main() {
     echo "  ✓ Dashboard ............ port 8080  (auto-start)"
     echo "  ✓ Tinymedia ............ port 5000  (auto-start)"
     echo "  ✓ Kiwix ................ port 8000  (auto-start, needs USB)"
-    echo "  ✓ FM/VHF Radio ......... port 10100 (on-demand via dashboard)"
+    echo "  ✓ Multi-mode Radio ..... port 10100 (on-demand via dashboard)"
     echo "  ✓ DAB+ Radio ........... port 7979  (on-demand via dashboard)"
     echo "  ✓ AIS Ship Tracking .... port 8100  (on-demand via dashboard)"
     echo ""

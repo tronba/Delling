@@ -10,12 +10,13 @@ app = Flask(__name__)
 # Service definitions
 SERVICES = {
     'fm-radio': {
-        'name': 'FM Radio',
+        'name': 'Multi-mode Radio',
         'icon': '📻',
         'service': 'rtl-fm-radio',
         'url': 'http://192.168.4.1:10100',
         'sdr': True,
-        'always_on': False
+        'always_on': False,
+        'description': None  # Has built-in antenna recommendations
     },
     'dab-radio': {
         'name': 'DAB+ Radio',
@@ -23,7 +24,8 @@ SERVICES = {
         'service': 'welle-cli',
         'url': 'http://192.168.4.1:7979',
         'sdr': True,
-        'always_on': False
+        'always_on': False,
+        'description': 'Recommended antenna: 37-75 cm'
     },
     'media': {
         'name': 'Media Server',
@@ -47,7 +49,8 @@ SERVICES = {
         'service': 'aiscatcher',
         'url': 'http://192.168.4.1:8100',
         'sdr': True,
-        'always_on': False
+        'always_on': False,
+        'description': 'Recommended antenna: 46 cm'
     },
     'meshtastic': {
         'name': 'Meshtastic',
@@ -138,6 +141,11 @@ HTML_TEMPLATE = '''
             background: rgba(76, 175, 80, 0.3);
             color: #81c784;
         }
+        .btn .description {
+            font-size: 10px;
+            color: #aaa;
+            margin-top: 4px;
+        }
         .btn.sdr {
             border-left: 3px solid #ff9800;
         }
@@ -156,6 +164,9 @@ HTML_TEMPLATE = '''
         <button class="btn {% if svc.sdr %}sdr{% endif %}" onclick="startService('{{ key }}', '{{ svc.url }}', {{ 'true' if svc.always_on else 'false' }})">
             <span class="icon">{{ svc.icon }}</span>
             <span class="name">{{ svc.name }}</span>
+            {% if svc.description %}
+            <span class="description">{{ svc.description }}</span>
+            {% endif %}
             {% if not svc.always_on %}
             <span class="status" id="status-{{ key }}">-</span>
             {% endif %}
@@ -181,10 +192,10 @@ HTML_TEMPLATE = '''
                 const data = await response.json();
                 
                 if (data.success) {
-                    // Small delay to let service start
+                    // Delay to let SDR service fully initialize
                     setTimeout(() => {
                         window.open(url, '_blank');
-                    }, 1500);
+                    }, 3500);
                 }
             } catch (err) {
                 console.error('Error:', err);
