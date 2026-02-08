@@ -566,17 +566,6 @@ EOF
 
 CDN_PATH="/opt/delling/webassets"
 
-# Build command as array for proper argument handling
-CMD=("/usr/local/bin/AIS-catcher")
-
-# Basic AIS-catcher arguments (instead of using config file with comments)
-CMD+=("-v" "10")              # Verbose level
-CMD+=("-M" "DT")              # Message type
-CMD+=("-gr" "TUNER" "38.6" "RTLAGC" "off")  # Tuner gain settings
-CMD+=("-s" "2304k")           # Sample rate
-CMD+=("-p" "3")               # PPM correction
-CMD+=("-o" "4")               # Optimizations
-
 # Try both common USB mount points to find MBTiles
 MOUNT_POINT=""
 for candidate in "/media/usb" "/media/$USER/usb"; do
@@ -598,22 +587,32 @@ if [ -n "$MOUNT_POINT" ]; then
     fi
 fi
 
-# Add web server with all -N options together (CDN, MBTILES, station info must be with -N)
-CMD+=("-N" "8100" "geojson" "on" "REALTIME" "on")
+# Build the -N option string with all web server parameters
+WEB_OPTS="8100 geojson on REALTIME on"
+
+# Add CDN path if available
 if [ -d "$CDN_PATH" ]; then
-    CMD+=("CDN" "$CDN_PATH")
+    WEB_OPTS="$WEB_OPTS CDN $CDN_PATH"
 fi
+
+# Add MBTILES if available
 if [ -n "$MBTILES_FILE" ]; then
-    CMD+=("MBTILES" "$MBTILES_FILE")
+    WEB_OPTS="$WEB_OPTS MBTILES $MBTILES_FILE"
 fi
-CMD+=("LAT" "51.50" "LON" "-1.00" "SHARE_LOC" "ON")
-CMD+=("STATION" "delling-station")
 
-# TCP Server on port 5012
-CMD+=("-S" "5012")
+# Add station location and info
+WEB_OPTS="$WEB_OPTS LAT 51.50 LON -1.00 SHARE_LOC ON STATION delling-station"
 
-echo "Starting: ${CMD[*]}"
-exec "${CMD[@]}"
+echo "Starting AIS-catcher with web options: $WEB_OPTS"
+exec /usr/local/bin/AIS-catcher \
+    -v 10 \
+    -M DT \
+    -gr TUNER 38.6 RTLAGC off \
+    -s 2304k \
+    -p 3 \
+    -o 4 \
+    -N $WEB_OPTS \
+    -S 5012
 AISCATCHEREOF
     chmod +x /opt/delling/scripts/start-aiscatcher.sh
 

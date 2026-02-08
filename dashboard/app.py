@@ -196,6 +196,18 @@ HTML_TEMPLATE = '''
             }
             
             try {
+                // Check if service is already running
+                const statusResponse = await fetch('/api/status');
+                const statusData = await statusResponse.json();
+                
+                if (statusData[key]) {
+                    // Service already running - open URL immediately
+                    window.open(url, '_blank');
+                    btn.classList.remove('loading');
+                    return;
+                }
+                
+                // Service not running - start it
                 const response = await fetch('/api/start/' + key, { method: 'POST' });
                 const data = await response.json();
                 
