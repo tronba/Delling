@@ -577,20 +577,7 @@ CMD+=("-s" "2304k")           # Sample rate
 CMD+=("-p" "3")               # PPM correction
 CMD+=("-o" "4")               # Optimizations
 
-# Add web server with offline CDN if available
-CMD+=("-N" "8100" "geojson" "on" "REALTIME" "on")
-if [ -d "$CDN_PATH" ]; then
-    CMD+=("CDN" "$CDN_PATH")
-fi
-
-# Add station info (optional, can be customized)
-CMD+=("LAT" "51.50" "LON" "-1.00" "SHARE_LOC" "ON")
-CMD+=("-N" "STATION" "delling-station")
-
-# TCP Server on port 5012
-CMD+=("-S" "5012")
-
-# Try both common USB mount points
+# Try both common USB mount points to find MBTiles
 MOUNT_POINT=""
 for candidate in "/media/usb" "/media/$USER/usb"; do
     if mountpoint -q "$candidate" 2>/dev/null || [ -d "$candidate" ]; then
@@ -600,16 +587,30 @@ for candidate in "/media/usb" "/media/$USER/usb"; do
 done
 
 # Find maps folder and first .mbtiles file
+MBTILES_FILE=""
 if [ -n "$MOUNT_POINT" ]; then
     MAPS_DIR=$(find "$MOUNT_POINT" -maxdepth 1 -type d -iname "maps" 2>/dev/null | head -n 1)
     if [ -n "$MAPS_DIR" ]; then
         MBTILES_FILE=$(find "$MAPS_DIR" -maxdepth 1 -type f -name "*.mbtiles" 2>/dev/null | head -n 1)
         if [ -n "$MBTILES_FILE" ]; then
             echo "Using offline map: $MBTILES_FILE"
-            CMD+=("MBTILES" "$MBTILES_FILE")
         fi
     fi
 fi
+
+# Add web server with all -N options together (CDN, MBTILES, station info must be with -N)
+CMD+=("-N" "8100" "geojson" "on" "REALTIME" "on")
+if [ -d "$CDN_PATH" ]; then
+    CMD+=("CDN" "$CDN_PATH")
+fi
+if [ -n "$MBTILES_FILE" ]; then
+    CMD+=("MBTILES" "$MBTILES_FILE")
+fi
+CMD+=("LAT" "51.50" "LON" "-1.00" "SHARE_LOC" "ON")
+CMD+=("STATION" "delling-station")
+
+# TCP Server on port 5012
+CMD+=("-S" "5012")
 
 echo "Starting: ${CMD[*]}"
 exec "${CMD[@]}"
