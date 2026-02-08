@@ -72,7 +72,7 @@ This allows direct playback in mobile browsers without transcoding.
 ## Installation
 
 ### Prerequisites
-- Fresh Raspberry Pi OS (Bookworm) or Armbian install
+- Fresh Raspberry Pi OS (Trixie) or Armbian install
 - **Ethernet connection required** (WiFi will be reconfigured during install)
 - USB drive connected and mounted at `/media/usb` (for Tinymedia)
 - Basic Linux command line knowledge
