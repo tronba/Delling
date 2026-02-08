@@ -567,17 +567,18 @@ EOF
 CDN_PATH="/opt/delling/webassets"
 CONF_FILE="/usr/share/aiscatcher/aiscatcher.conf"
 
-# Build base command: binary + config (if it exists)
-CMD="/usr/bin/AIS-catcher"
+# Build command as array for proper argument handling
+CMD=("/usr/bin/AIS-catcher")
+
+# Add config file if it exists
 if [ -f "$CONF_FILE" ]; then
-    CMD="$CMD -C $CONF_FILE"
+    CMD+=("-C" "$CONF_FILE")
 fi
 
-# Add offline CDN if available
+# Add web server with offline CDN if available
+CMD+=("-N" "8100")
 if [ -d "$CDN_PATH" ]; then
-    CMD="$CMD -N 8100 CDN $CDN_PATH"
-else
-    CMD="$CMD -N 8100"
+    CMD+=("CDN" "$CDN_PATH")
 fi
 
 # Try both common USB mount points
@@ -596,13 +597,13 @@ if [ -n "$MOUNT_POINT" ]; then
         MBTILES_FILE=$(find "$MAPS_DIR" -maxdepth 1 -type f -name "*.mbtiles" 2>/dev/null | head -n 1)
         if [ -n "$MBTILES_FILE" ]; then
             echo "Using offline map: $MBTILES_FILE"
-            CMD="$CMD MBTILES $MBTILES_FILE"
+            CMD+=("MBTILES" "$MBTILES_FILE")
         fi
     fi
 fi
 
-echo "Starting: $CMD"
-exec $CMD
+echo "Starting: ${CMD[*]}"
+exec "${CMD[@]}"
 AISCATCHEREOF
     chmod +x /opt/delling/scripts/start-aiscatcher.sh
 
