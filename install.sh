@@ -549,6 +549,81 @@ EOF
     # Fix config to use first available SDR
     sudo sed -i 's/^-d [0-9]\+/#-d 0/' /usr/share/aiscatcher/aiscatcher.conf 2>/dev/null || true
 
+    # ─── AIS-catcher Offline Web Assets ───
+    print_step "Cloning AIS-catcher web assets for offline use..."
+    if [ -d /opt/delling/webassets ]; then
+        print_info "webassets directory exists, updating..."
+        pushd /opt/delling/webassets > /dev/null && git pull && popd > /dev/null
+    else
+        git clone https://github.com/jvde-github/webassets.git /opt/delling/webassets
+    fi
+
+    # ─── AIS-catcher Startup Script (offline CDN + MBTiles) ───
+    print_step "Creating AIS-catcher startup script with offline map support..."
+    cat > /opt/delling/scripts/start-aiscatcher.sh << 'AISCATCHEREOF'
+#!/bin/bash
+# Start AIS-catcher with offline web assets and MBTiles map tiles
+
+CDN_PATH="/opt/delling/webassets"
+CONF_FILE="/usr/share/aiscatcher/aiscatcher.conf"
+
+# Build base command: binary + config (if it exists)
+CMD="/usr/bin/AIS-catcher"
+if [ -f "$CONF_FILE" ]; then
+    CMD="$CMD -C $CONF_FILE"
+fi
+
+# Add offline CDN if available
+if [ -d "$CDN_PATH" ]; then
+    CMD="$CMD -N 8100 CDN $CDN_PATH"
+else
+    CMD="$CMD -N 8100"
+fi
+
+# Try both common USB mount points
+MOUNT_POINT=""
+for candidate in "/media/usb" "/media/$USER/usb"; do
+    if mountpoint -q "$candidate" 2>/dev/null || [ -d "$candidate" ]; then
+        MOUNT_POINT="$candidate"
+        break
+    fi
+done
+
+# Find maps folder and first .mbtiles file
+if [ -n "$MOUNT_POINT" ]; then
+    MAPS_DIR=$(find "$MOUNT_POINT" -maxdepth 1 -type d -iname "maps" 2>/dev/null | head -n 1)
+    if [ -n "$MAPS_DIR" ]; then
+        MBTILES_FILE=$(find "$MAPS_DIR" -maxdepth 1 -type f -name "*.mbtiles" 2>/dev/null | head -n 1)
+        if [ -n "$MBTILES_FILE" ]; then
+            echo "Using offline map: $MBTILES_FILE"
+            CMD="$CMD MBTILES $MBTILES_FILE"
+        fi
+    fi
+fi
+
+echo "Starting: $CMD"
+exec $CMD
+AISCATCHEREOF
+    chmod +x /opt/delling/scripts/start-aiscatcher.sh
+
+    print_step "Creating AIS-catcher service override..."
+    sudo tee /etc/systemd/system/aiscatcher.service > /dev/null << EOF
+[Unit]
+Description=AIS-catcher Ship Tracking (Offline)
+After=network.target local-fs.target
+
+[Service]
+Type=simple
+User=$DELLING_USER
+ExecStart=/opt/delling/scripts/start-aiscatcher.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    sudo systemctl daemon-reload
+
     print_step "Phase 6 complete!"
 }
 
