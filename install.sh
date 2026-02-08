@@ -565,21 +565,30 @@ EOF
 # Start AIS-catcher with offline web assets and MBTiles map tiles
 
 CDN_PATH="/opt/delling/webassets"
-CONF_FILE="/usr/share/aiscatcher/aiscatcher.conf"
 
 # Build command as array for proper argument handling
 CMD=("/usr/local/bin/AIS-catcher")
 
-# Add config file if it exists
-if [ -f "$CONF_FILE" ]; then
-    CMD+=("-C" "$CONF_FILE")
-fi
+# Basic AIS-catcher arguments (instead of using config file with comments)
+CMD+=("-v" "10")              # Verbose level
+CMD+=("-M" "DT")              # Message type
+CMD+=("-gr" "TUNER" "38.6" "RTLAGC" "off")  # Tuner gain settings
+CMD+=("-s" "2304k")           # Sample rate
+CMD+=("-p" "3")               # PPM correction
+CMD+=("-o" "4")               # Optimizations
 
 # Add web server with offline CDN if available
-CMD+=("-N" "8100")
+CMD+=("-N" "8100" "geojson" "on" "REALTIME" "on")
 if [ -d "$CDN_PATH" ]; then
     CMD+=("CDN" "$CDN_PATH")
 fi
+
+# Add station info (optional, can be customized)
+CMD+=("LAT" "51.50" "LON" "-1.00" "SHARE_LOC" "ON")
+CMD+=("-N" "STATION" "delling-station")
+
+# TCP Server on port 5012
+CMD+=("-S" "5012")
 
 # Try both common USB mount points
 MOUNT_POINT=""
