@@ -568,7 +568,7 @@ CDN_PATH="/opt/delling/webassets"
 CONF_FILE="/usr/share/aiscatcher/aiscatcher.conf"
 
 # Build command as array for proper argument handling
-CMD=("/usr/bin/AIS-catcher")
+CMD=("/usr/local/bin/AIS-catcher")
 
 # Add config file if it exists
 if [ -f "$CONF_FILE" ]; then
