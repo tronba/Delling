@@ -182,6 +182,7 @@ phase1_base_system() {
         libusb-1.0-0-dev \
         rtl-sdr \
         librtlsdr-dev \
+        libsqlite3-dev \
         dnsmasq \
         nftables \
         kiwix-tools \
