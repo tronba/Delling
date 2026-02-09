@@ -25,6 +25,9 @@
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Ensure /usr/sbin is in PATH (needed on some Armbian installs for rfkill, iw, etc.)
+export PATH="/usr/sbin:/usr/local/sbin:$PATH"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -83,6 +86,48 @@ check_arch() {
             exit 1
         fi
     fi
+}
+
+check_dependencies() {
+    local missing=()
+    for cmd in nmcli iw rfkill; do
+        if ! command -v "$cmd" &>/dev/null; then
+            missing+=("$cmd")
+        fi
+    done
+    if [ ${#missing[@]} -gt 0 ]; then
+        print_info "Missing commands: ${missing[*]}"
+        print_info "These will be installed during Phase 1."
+    fi
+}
+
+detect_network_stack() {
+    if command -v nmcli &>/dev/null && systemctl is-active NetworkManager &>/dev/null; then
+        echo "networkmanager"
+    elif systemctl is-active systemd-networkd &>/dev/null; then
+        echo "networkd"
+    else
+        echo "unknown"
+    fi
+}
+
+detect_wifi_interface() {
+    # Find the first wireless interface
+    local iface
+    iface=$(iw dev 2>/dev/null | awk '/Interface/{print $2}' | head -n1)
+    if [ -z "$iface" ]; then
+        # Fallback: check /sys/class/net for wireless devices
+        for dev in /sys/class/net/*; do
+            if [ -d "$dev/wireless" ] || [ -d "$dev/phy80211" ]; then
+                iface=$(basename "$dev")
+                break
+            fi
+        done
+    fi
+    if [ -z "$iface" ]; then
+        iface="wlan0"  # Last resort default
+    fi
+    echo "$iface"
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -168,7 +213,8 @@ phase1_base_system() {
     print_step "Upgrading system packages..."
     sudo apt upgrade -y
 
-    print_step "Installing dependencies..."
+    # --- Core dependencies (must succeed) ---
+    print_step "Installing core dependencies..."
     sudo apt install -y \
         git \
         python3 \
@@ -184,10 +230,28 @@ phase1_base_system() {
         librtlsdr-dev \
         libsqlite3-dev \
         sqlite3 \
+        network-manager \
         dnsmasq \
         nftables \
-        kiwix-tools \
-        welle.io
+        iw \
+        wireless-tools \
+        exfatprogs
+
+    # --- Optional packages (may not be in all repos) ---
+    print_step "Installing optional packages..."
+    for pkg in kiwix-tools welle.io; do
+        if sudo apt install -y "$pkg" 2>/dev/null; then
+            print_step "Installed $pkg"
+        else
+            record_failure "Package '$pkg' not available in repos (may need manual install)"
+        fi
+    done
+
+    # --- Ensure user can access USB SDR devices ---
+    if ! groups "$DELLING_USER" | grep -q plugdev; then
+        print_step "Adding $DELLING_USER to plugdev group (SDR access)..."
+        sudo usermod -aG plugdev "$DELLING_USER"
+    fi
 
     print_step "Phase 1 complete!"
 }
@@ -199,14 +263,66 @@ phase1_base_system() {
 phase2_network() {
     print_header "Phase 2: Network Configuration"
 
+    # --- Detect WiFi interface ---
+    WIFI_IFACE=$(detect_wifi_interface)
+    print_info "Detected WiFi interface: $WIFI_IFACE"
+
+    # --- Detect networking stack and prepare NetworkManager ---
+    local net_stack
+    net_stack=$(detect_network_stack)
+    print_info "Detected networking stack: $net_stack"
+
+    if [ "$net_stack" = "networkd" ]; then
+        print_info "System uses systemd-networkd (typical for Armbian/Orange Pi)"
+        print_step "Configuring NetworkManager to coexist with systemd-networkd..."
+
+        # Tell systemd-networkd to leave WiFi interface alone
+        sudo tee /etc/systemd/network/10-ignore-wlan.network > /dev/null << NETEOF
+[Match]
+Name=$WIFI_IFACE
+
+[Link]
+Unmanaged=yes
+NETEOF
+        sudo systemctl restart systemd-networkd
+
+        # Enable and start NetworkManager
+        sudo systemctl enable NetworkManager
+        sudo systemctl start NetworkManager
+        sleep 3
+    fi
+
+    # Verify nmcli is available
+    if ! command -v nmcli &>/dev/null; then
+        record_failure "Network: nmcli not found. NetworkManager installation may have failed."
+        return 1
+    fi
+
+    # Ensure NetworkManager is running
+    if ! systemctl is-active NetworkManager &>/dev/null; then
+        print_step "Starting NetworkManager..."
+        sudo systemctl enable NetworkManager
+        sudo systemctl start NetworkManager
+        sleep 3
+    fi
+
+    # --- Disable standalone dnsmasq (NM's shared mode runs its own) ---
+    print_step "Disabling standalone dnsmasq (NetworkManager handles DHCP/DNS)..."
+    sudo systemctl disable --now dnsmasq 2>/dev/null || true
+
+    # --- Disable WiFi power saving for stability (especially Unisoc chips) ---
+    if command -v iw &>/dev/null; then
+        sudo iw dev "$WIFI_IFACE" set power_save off 2>/dev/null || true
+    fi
+
     # --- WiFi Access Point ---
     if nmcli con show DellingAP &>/dev/null; then
         print_info "WiFi AP 'DellingAP' already exists, removing..."
         sudo nmcli con delete DellingAP
     fi
 
-    print_step "Creating WiFi Access Point '$WIFI_SSID'..."
-    sudo nmcli con add type wifi ifname wlan0 mode ap con-name DellingAP ssid "$WIFI_SSID" \
+    print_step "Creating WiFi Access Point '$WIFI_SSID' on $WIFI_IFACE..."
+    sudo nmcli con add type wifi ifname "$WIFI_IFACE" mode ap con-name DellingAP ssid "$WIFI_SSID" \
         wifi.band bg \
         wifi.channel "$WIFI_CHANNEL" \
         ipv4.method shared \
@@ -216,6 +332,16 @@ phase2_network() {
     print_step "Enabling WiFi AP..."
     sudo nmcli con up DellingAP
     sudo nmcli con modify DellingAP connection.autoconnect yes
+
+    # --- Verify AP is actually running ---
+    sleep 5
+    if nmcli -t -f GENERAL.STATE con show DellingAP 2>/dev/null | grep -q activated; then
+        print_step "WiFi AP is active and broadcasting '$WIFI_SSID'"
+    else
+        record_failure "Network: WiFi AP 'DellingAP' failed to activate"
+        print_info "Debug: sudo nmcli con up DellingAP"
+        print_info "Logs:  sudo journalctl -u NetworkManager -n 50"
+    fi
 
     # --- Captive Portal: DNS redirect ---
     print_step "Configuring DNS redirect (all domains → 192.168.4.1)..."
@@ -228,7 +354,7 @@ phase2_network() {
     sudo nft delete table ip captive 2>/dev/null || true
     sudo nft add table ip captive
     sudo nft add chain ip captive prerouting '{ type nat hook prerouting priority -100 ; }'
-    sudo nft add rule ip captive prerouting iifname "wlan0" tcp dport 80 redirect to :8080
+    sudo nft add rule ip captive prerouting iifname "$WIFI_IFACE" tcp dport 80 redirect to :8080
     sudo nft list ruleset | sudo tee /etc/nftables.conf > /dev/null
     sudo systemctl enable nftables
 
@@ -683,6 +809,7 @@ phase7_finalize() {
 main() {
     check_root
     check_arch
+    check_dependencies
     ask_questions
 
     phase1_base_system
