@@ -157,6 +157,13 @@ HTML_TEMPLATE = '''
         .btn.sdr {
             border-left: 3px solid #ff9800;
         }
+        .btn.stop-sdr {
+            background: linear-gradient(145deg, #3d2d2d, #382525);
+            border-left: 3px solid #f44336;
+        }
+        .btn.stop-sdr:hover {
+            background: linear-gradient(145deg, #4d3535, #402d2d);
+        }
         .footer {
             text-align: center;
             color: #666;
@@ -180,6 +187,11 @@ HTML_TEMPLATE = '''
             {% endif %}
         </button>
         {% endfor %}
+        <button class="btn stop-sdr" onclick="stopSDR()">
+            <span class="icon">⏹️</span>
+            <span class="name">SDR off</span>
+            <span class="description">(power saving)</span>
+        </button>
     </div>
     <div class="footer">SDR services (orange) share the radio - only one runs at a time</div>
 
@@ -242,6 +254,20 @@ HTML_TEMPLATE = '''
             }
         }
 
+        async function stopSDR() {
+            const btn = event.currentTarget;
+            btn.classList.add('loading');
+            
+            try {
+                await fetch('/api/stop-sdr', { method: 'POST' });
+            } catch (err) {
+                console.error('Error:', err);
+            }
+            
+            btn.classList.remove('loading');
+            updateStatus();
+        }
+
         // Update status on load and every 5 seconds
         updateStatus();
         setInterval(updateStatus, 5000);
@@ -294,6 +320,12 @@ def start_service(service_key):
         run_cmd(f"sudo systemctl start {svc['service']}")
     
     return jsonify({'success': True, 'url': svc['url']})
+
+@app.route('/api/stop-sdr', methods=['POST'])
+def stop_sdr():
+    """Stop all SDR services to save power"""
+    stop_sdr_services()
+    return jsonify({'success': True})
 
 @app.route('/api/status')
 def get_status():

@@ -183,6 +183,7 @@ phase1_base_system() {
         rtl-sdr \
         librtlsdr-dev \
         libsqlite3-dev \
+        sqlite3 \
         dnsmasq \
         nftables \
         kiwix-tools \
@@ -596,7 +597,18 @@ if [ -d "$CDN_PATH" ]; then
     WEB_OPTS="$WEB_OPTS CDN $CDN_PATH"
 fi
 
-# Add MBTILES if available
+# Create a plugin that removes default online tile layers (OSM etc.)
+# so the offline MBTiles layer becomes the default
+PLUGIN_FILE="/opt/delling/scripts/offline-map-default.js"
+cat > "$PLUGIN_FILE" << 'PLUGINEOF'
+// Remove all default online tile layers (OSM etc.) so offline MBTiles is the default
+removeTileLayerAll();
+PLUGINEOF
+
+# Add PLUGIN before MBTILES so defaults are cleared first, then offline layer is added
+WEB_OPTS="$WEB_OPTS PLUGIN $PLUGIN_FILE"
+
+# Add MBTILES if available (added after PLUGIN so it becomes the only/default layer)
 if [ -n "$MBTILES_FILE" ]; then
     WEB_OPTS="$WEB_OPTS MBTILES $MBTILES_FILE"
 fi
