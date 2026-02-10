@@ -38,6 +38,9 @@ NC='\033[0m' # No Color
 # Track failures for end-of-install report
 declare -a FAILURES=()
 
+# Track which port-redirect method was configured (nftables or iptables)
+REDIRECT_METHOD="nftables"
+
 # ═══════════════════════════════════════════════════════════════════════════
 # HELPER FUNCTIONS
 # ═══════════════════════════════════════════════════════════════════════════
@@ -350,13 +353,51 @@ NETEOF
 
     # --- Captive Portal: HTTP redirect (port 80 → 8080 dashboard) ---
     print_step "Configuring HTTP redirect (port 80 → 8080)..."
-    # Flush existing captive table to allow re-runs
-    sudo nft delete table ip captive 2>/dev/null || true
-    sudo nft add table ip captive
-    sudo nft add chain ip captive prerouting '{ type nat hook prerouting priority -100 ; }'
-    sudo nft add rule ip captive prerouting iifname "$WIFI_IFACE" tcp dport 80 redirect to :8080
-    sudo nft list ruleset | sudo tee /etc/nftables.conf > /dev/null
-    sudo systemctl enable nftables
+
+    # Try loading nftables kernel modules (needed on some ARM SBCs)
+    for mod in nf_tables nft_chain_nat nft_compat; do
+        sudo modprobe "$mod" 2>/dev/null || true
+    done
+
+    # Attempt nftables first, fall back to iptables if kernel lacks support
+    if sudo nft add table ip captive 2>/dev/null; then
+        print_info "Using nftables for port redirect"
+        sudo nft flush table ip captive 2>/dev/null || true
+        sudo nft add chain ip captive prerouting '{ type nat hook prerouting priority -100 ; }'
+        sudo nft add rule ip captive prerouting iifname "$WIFI_IFACE" tcp dport 80 redirect to :8080
+        sudo nft list ruleset | sudo tee /etc/nftables.conf > /dev/null
+        sudo systemctl enable nftables
+        REDIRECT_METHOD="nftables"
+    else
+        print_info "nftables not supported by kernel, falling back to iptables"
+        sudo apt install -y iptables 2>/dev/null || true
+        # Remove any stale nftables rules
+        sudo nft delete table ip captive 2>/dev/null || true
+        # Flush old iptables redirect rules
+        sudo iptables -t nat -D PREROUTING -i "$WIFI_IFACE" -p tcp --dport 80 -j REDIRECT --to-port 8080 2>/dev/null || true
+        # Add iptables redirect
+        sudo iptables -t nat -A PREROUTING -i "$WIFI_IFACE" -p tcp --dport 80 -j REDIRECT --to-port 8080
+        # Persist iptables rules across reboots
+        sudo sh -c 'iptables-save > /etc/iptables.rules'
+        # Create systemd service to restore rules on boot
+        cat <<'IPTEOF' | sudo tee /etc/systemd/system/iptables-restore.service > /dev/null
+[Unit]
+Description=Restore iptables rules
+Before=network-pre.target
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'iptables-restore < /etc/iptables.rules'
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+IPTEOF
+        sudo systemctl daemon-reload
+        sudo systemctl enable iptables-restore
+        REDIRECT_METHOD="iptables"
+    fi
 
     # --- Disable IP forwarding (no internet sharing) ---
     print_step "Disabling IP forwarding..."
@@ -790,7 +831,12 @@ phase7_finalize() {
     sudo systemctl enable delling-dashboard
     sudo systemctl enable kiwix
     sudo systemctl enable delling-maps
-    sudo systemctl enable nftables
+    # Enable whichever redirect method was configured in phase 2
+    if [ "$REDIRECT_METHOD" = "iptables" ]; then
+        sudo systemctl enable iptables-restore
+    else
+        sudo systemctl enable nftables
+    fi
     # tinymedia is enabled by its own installer (if it ran successfully)
 
     print_step "Starting dashboard..."
