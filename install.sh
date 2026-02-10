@@ -360,16 +360,24 @@ NETEOF
     done
 
     # Attempt nftables first, fall back to iptables if kernel lacks support
+    NFT_OK=false
     if sudo nft add table ip captive 2>/dev/null; then
-        print_info "Using nftables for port redirect"
         sudo nft flush table ip captive 2>/dev/null || true
-        sudo nft add chain ip captive prerouting '{ type nat hook prerouting priority -100 ; }'
-        sudo nft add rule ip captive prerouting iifname "$WIFI_IFACE" tcp dport 80 redirect to :8080
-        sudo nft list ruleset | sudo tee /etc/nftables.conf > /dev/null
-        sudo systemctl enable nftables
-        REDIRECT_METHOD="nftables"
-    else
-        print_info "nftables not supported by kernel, falling back to iptables"
+        if sudo nft add chain ip captive prerouting '{ type nat hook prerouting priority -100 ; }' 2>/dev/null && \
+           sudo nft add rule ip captive prerouting iifname "$WIFI_IFACE" tcp dport 80 redirect to :8080 2>/dev/null; then
+            NFT_OK=true
+            print_info "Using nftables for port redirect"
+            sudo nft list ruleset | sudo tee /etc/nftables.conf > /dev/null
+            sudo systemctl enable nftables
+            REDIRECT_METHOD="nftables"
+        else
+            print_info "nftables commands failed, cleaning up..."
+            sudo nft delete table ip captive 2>/dev/null || true
+        fi
+    fi
+
+    if [ "$NFT_OK" = false ]; then
+        print_info "nftables not available, falling back to iptables"
         sudo apt install -y iptables 2>/dev/null || true
         # Remove any stale nftables rules
         sudo nft delete table ip captive 2>/dev/null || true
@@ -399,6 +407,22 @@ IPTEOF
         REDIRECT_METHOD="iptables"
     fi
 
+    # Verify the redirect is active
+    print_step "Verifying port 80 → 8080 redirect..."
+    if [ "$REDIRECT_METHOD" = "nftables" ]; then
+        if sudo nft list table ip captive 2>/dev/null | grep -q 'redirect to :8080'; then
+            print_step "nftables redirect verified!"
+        else
+            record_failure "Network: nftables redirect rule not active"
+        fi
+    else
+        if sudo iptables -t nat -L PREROUTING -n 2>/dev/null | grep -q 'redir ports 8080'; then
+            print_step "iptables redirect verified!"
+        else
+            record_failure "Network: iptables redirect rule not active"
+        fi
+    fi
+
     # --- Disable IP forwarding (no internet sharing) ---
     print_step "Disabling IP forwarding..."
     echo 'net.ipv4.ip_forward = 0' | sudo tee /etc/sysctl.d/99-no-forward.conf > /dev/null
@@ -417,6 +441,25 @@ IPTEOF
 
 phase3_dashboard() {
     print_header "Phase 3: Delling Dashboard"
+
+    # --- Sudoers: allow dashboard user to start/stop services without password ---
+    print_step "Configuring sudoers for service control..."
+    sudo tee /etc/sudoers.d/delling > /dev/null << EOF
+# Delling Dashboard - allow service control without password
+$DELLING_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start rtl-fm-radio, /usr/bin/systemctl stop rtl-fm-radio
+$DELLING_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start welle-cli, /usr/bin/systemctl stop welle-cli
+$DELLING_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start aiscatcher, /usr/bin/systemctl stop aiscatcher
+$DELLING_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start tinymedia, /usr/bin/systemctl stop tinymedia
+$DELLING_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start kiwix, /usr/bin/systemctl stop kiwix
+$DELLING_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start delling-maps, /usr/bin/systemctl stop delling-maps
+$DELLING_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start delling-dashboard, /usr/bin/systemctl stop delling-dashboard
+EOF
+    sudo chmod 0440 /etc/sudoers.d/delling
+    # Validate the sudoers file (remove if invalid to avoid lockout)
+    if ! sudo visudo -cf /etc/sudoers.d/delling; then
+        record_failure "Sudoers: /etc/sudoers.d/delling has syntax errors, removing"
+        sudo rm -f /etc/sudoers.d/delling
+    fi
 
     print_step "Creating dashboard service..."
     sudo tee /etc/systemd/system/delling-dashboard.service > /dev/null << EOF
@@ -734,8 +777,23 @@ EOF
 # Start AIS-catcher with offline web assets and MBTiles map tiles
 
 CDN_PATH="/opt/delling/webassets"
+CONF_FILE="/usr/share/aiscatcher/aiscatcher.conf"
 
-# Try both common USB mount points to find MBTiles
+# Build command as array for proper argument handling
+CMD=("/usr/local/bin/AIS-catcher")
+
+# Add config file if it exists
+if [ -f "$CONF_FILE" ]; then
+    CMD+=("-C" "$CONF_FILE")
+fi
+
+# Add web server with offline CDN if available
+CMD+=("-N" "8100")
+if [ -d "$CDN_PATH" ]; then
+    CMD+=("CDN" "$CDN_PATH")
+fi
+
+# Try both common USB mount points
 MOUNT_POINT=""
 for candidate in "/media/usb" "/media/$USER/usb"; do
     if mountpoint -q "$candidate" 2>/dev/null || [ -d "$candidate" ]; then
@@ -745,54 +803,19 @@ for candidate in "/media/usb" "/media/$USER/usb"; do
 done
 
 # Find maps folder and first .mbtiles file
-MBTILES_FILE=""
 if [ -n "$MOUNT_POINT" ]; then
     MAPS_DIR=$(find "$MOUNT_POINT" -maxdepth 1 -type d -iname "maps" 2>/dev/null | head -n 1)
     if [ -n "$MAPS_DIR" ]; then
         MBTILES_FILE=$(find "$MAPS_DIR" -maxdepth 1 -type f -name "*.mbtiles" 2>/dev/null | head -n 1)
         if [ -n "$MBTILES_FILE" ]; then
             echo "Using offline map: $MBTILES_FILE"
+            CMD+=("MBTILES" "$MBTILES_FILE")
         fi
     fi
 fi
 
-# Build the -N option string with all web server parameters
-WEB_OPTS="8100 geojson on REALTIME on"
-
-# Add CDN path if available
-if [ -d "$CDN_PATH" ]; then
-    WEB_OPTS="$WEB_OPTS CDN $CDN_PATH"
-fi
-
-# Create a plugin that removes default online tile layers (OSM etc.)
-# so the offline MBTiles layer becomes the default
-PLUGIN_FILE="/opt/delling/scripts/offline-map-default.js"
-cat > "$PLUGIN_FILE" << 'PLUGINEOF'
-// Remove all default online tile layers (OSM etc.) so offline MBTiles is the default
-removeTileLayerAll();
-PLUGINEOF
-
-# Add PLUGIN before MBTILES so defaults are cleared first, then offline layer is added
-WEB_OPTS="$WEB_OPTS PLUGIN $PLUGIN_FILE"
-
-# Add MBTILES if available (added after PLUGIN so it becomes the only/default layer)
-if [ -n "$MBTILES_FILE" ]; then
-    WEB_OPTS="$WEB_OPTS MBTILES $MBTILES_FILE"
-fi
-
-# Add station location and info
-WEB_OPTS="$WEB_OPTS LAT 51.50 LON -1.00 SHARE_LOC ON STATION delling-station"
-
-echo "Starting AIS-catcher with web options: $WEB_OPTS"
-exec /usr/local/bin/AIS-catcher \
-    -v 10 \
-    -M DT \
-    -gr TUNER 38.6 RTLAGC off \
-    -s 2304k \
-    -p 3 \
-    -o 4 \
-    -N $WEB_OPTS \
-    -S 5012
+echo "Starting: ${CMD[*]}"
+exec "${CMD[@]}"
 AISCATCHEREOF
     chmod +x /opt/delling/scripts/start-aiscatcher.sh
 
