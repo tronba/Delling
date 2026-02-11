@@ -781,9 +781,9 @@ CMD=("/usr/local/bin/AIS-catcher")
 
 # Extract generic SDR settings from upstream config file
 # Strip comments (#), blank lines, network config (we provide our own),
-# and dongle-specific calibration (-gr gain, -p ppm) which vary per dongle
+# and dongle-specific calibration (-d serial, -gr gain, -p ppm) which vary per dongle
 if [ -f "$CONF_FILE" ]; then
-    SDR_ARGS=$(sed 's/#.*//; /^\s*$/d; /^\s*-N/d; /^\s*-S/d; /^\s*LAT/d; /^\s*-u/d; /^\s*-P/d; /^\s*-gr/d; /^\s*-p/d' "$CONF_FILE" | tr '\n' ' ')
+    SDR_ARGS=$(sed 's/#.*//; /^\s*$/d; /^\s*-N/d; /^\s*-S/d; /^\s*LAT/d; /^\s*-u/d; /^\s*-P/d; /^\s*-d/d; /^\s*-gr/d; /^\s*-p/d' "$CONF_FILE" | tr '\n' ' ')
     if [ -n "$SDR_ARGS" ]; then
         read -ra EXTRA_ARGS <<< "$SDR_ARGS"
         CMD+=("${EXTRA_ARGS[@]}")
