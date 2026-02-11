@@ -18,9 +18,16 @@ CONF_FILE="/usr/share/aiscatcher/aiscatcher.conf"
 # Build command as array for proper argument handling
 CMD=("/usr/local/bin/AIS-catcher")
 
-# Add config file if it exists
+# Extract SDR/radio settings from upstream config file
+# Strip comments (#), blank lines, and network/server config (we provide our own)
+# This avoids using -C which tries to parse the file as JSON and chokes on # comments
 if [ -f "$CONF_FILE" ]; then
-    CMD+=("-C" "$CONF_FILE")
+    SDR_ARGS=$(sed 's/#.*//; /^\s*$/d; /^\s*-N/d; /^\s*-S/d; /^\s*LAT/d; /^\s*-u/d; /^\s*-P/d' "$CONF_FILE" | tr '\n' ' ')
+    if [ -n "$SDR_ARGS" ]; then
+        read -ra EXTRA_ARGS <<< "$SDR_ARGS"
+        CMD+=("${EXTRA_ARGS[@]}")
+        echo "SDR settings from config: $SDR_ARGS"
+    fi
 fi
 
 # Add web server with offline CDN if available
