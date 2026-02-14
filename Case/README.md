@@ -1,4 +1,7 @@
-This file will contain stuff.
+STL files for project box.
+
+There are two version of the main box, with text and without.
+I have printed this on Bambu Lab X1 Carbon, had to colour the inside of the text in Bambu software. 
 
 
 License
