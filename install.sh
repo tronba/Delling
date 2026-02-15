@@ -400,14 +400,17 @@ NETEOF
         # Create systemd service to restore rules on boot
         cat <<'IPTEOF' | sudo tee /etc/systemd/system/iptables-restore.service > /dev/null
 [Unit]
-Description=Restore iptables rules
-Before=network-pre.target
-Wants=network-pre.target
+Description=Restore iptables rules for Delling captive portal
+After=NetworkManager.service
+Wants=NetworkManager.service
 
 [Service]
 Type=oneshot
+ExecStartPre=/bin/sleep 5
 ExecStart=/bin/sh -c 'iptables-restore < /etc/iptables.rules'
 RemainAfterExit=yes
+Restart=on-failure
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
