@@ -240,6 +240,7 @@ phase1_base_system() {
         ncurses-bin \
         zlib1g-dev \
         zlib1g \
+        libzstd-dev \
         pkg-config \
         lighttpd \
         network-manager \
