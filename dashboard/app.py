@@ -60,6 +60,16 @@ SERVICES = {
         'always_on': False,
         'description': 'Recommended antenna: 46 cm'
     },
+    'adsb': {
+        'name': 'Aircraft',
+        'icon': '✈️',
+        'service': 'readsb',
+        'url': 'http://192.168.4.1:8090/tar1090',
+        'sdr': True,
+        'always_on': False,
+        'description': 'ADS-B tracking',
+        'extra_services': ['tar1090', 'lighttpd']
+    },
     'meshtastic': {
         'name': 'Meshtastic',
         'icon': '💬',
@@ -70,7 +80,7 @@ SERVICES = {
     },
 }
 
-SDR_SERVICES = ['rtl-fm-radio', 'welle-cli', 'aiscatcher']
+SDR_SERVICES = ['rtl-fm-radio', 'welle-cli', 'aiscatcher', 'readsb', 'tar1090', 'lighttpd']
 
 HTML_TEMPLATE = '''
 <!DOCTYPE html>
@@ -318,6 +328,10 @@ def start_service(service_key):
     # Start the service if it has one
     if svc['service']:
         run_cmd(f"sudo systemctl start {svc['service']}")
+    
+    # Start extra services (e.g. tar1090 + lighttpd for ADS-B)
+    for extra in svc.get('extra_services', []):
+        run_cmd(f"sudo systemctl start {extra}")
     
     return jsonify({'success': True, 'url': svc['url']})
 

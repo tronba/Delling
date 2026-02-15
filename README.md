@@ -12,6 +12,7 @@ Delling – named after the Norse god of dawn – is a self-contained hub that r
   - FM Radio (AM/FM, Marine VHF, Aviation, PMR446)
   - DAB+ Radio (digital radio)
   - AIS ship tracking
+  - ADS-B aircraft tracking (readsb + tar1090)
 - **Offline maps** – Leaflet map viewer with MBTiles tile server, AIS ship overlay
 - **Local communication** – Mesh messaging via Meshtastic and Heltec V3
 - **Media server** – Stream and share files from USB storage
@@ -136,9 +137,10 @@ Once rebooted, Delling will be ready:
 - **Media Server** - Browse and stream media from USB
 - **Kiwix** - Offline Wikipedia and educational content
 - **Ship Tracking** - Live AIS marine tracking
+- **Aircraft Tracking** - ADS-B aircraft tracking with tar1090 map interface
 - **Meshtastic** - Mesh messaging (requires Heltec V3)
 
-**Note:** Only one SDR service (FM/DAB/AIS) can run at a time. The system automatically stops other SDR services when you start a new one.
+**Note:** Only one SDR service (FM/DAB/AIS/ADS-B) can run at a time. The system automatically stops other SDR services when you start a new one.
 
 ---
 
@@ -153,6 +155,7 @@ Once rebooted, Delling will be ready:
 | Tinymedia (media server) | 5000 |
 | Kiwix | 8000 |
 | Ship Tracking (AIS-catcher) | 8100 |
+| Aircraft Tracking (tar1090) | 8090 |
 | Meshtastic | 192.168.4.10 |
 
 ---
@@ -187,10 +190,19 @@ All services are managed via systemd. You can control them manually if needed:
 
 ```bash
 # Stop all SDR services
-sudo systemctl stop rtl-fm-radio welle-cli aiscatcher
+sudo systemctl stop rtl-fm-radio welle-cli aiscatcher readsb tar1090 lighttpd
 
 # Start a specific service
 sudo systemctl start rtl-fm-radio
+
+# Start ADS-B (requires all three services)
+sudo systemctl start readsb && sudo systemctl start tar1090 && sudo systemctl start lighttpd
+
+# Set ADS-B receiver location (improves range display)
+sudo readsb-set-location 59.9139 10.7522
+
+# Adjust ADS-B gain
+sudo readsb-gain -10
 
 # Check service status
 sudo systemctl status rtl-fm-radio
@@ -213,12 +225,20 @@ Built with open-source software:
 
 - [Flask](https://flask.palletsprojects.com/) - Python web framework
 - [AIS-catcher](https://github.com/jvde-github/AIS-catcher) - AIS receiver
+- [readsb](https://github.com/wiedehopf/readsb) - ADS-B decoder (by wiedehopf)
+- [tar1090](https://github.com/wiedehopf/tar1090) - ADS-B web interface (by wiedehopf)
 - [Kiwix](https://www.kiwix.org/) - Offline content server
 - [Meshtastic](https://meshtastic.org/) - Mesh networking
 - [welle.io](https://github.com/AlbrechtL/welle.io) - DAB/DAB+ receiver
 - [rtl_fm_python_webgui](https://github.com/tronba/rtl_fm_python_webgui) - FM radio interface
 - [Tinymedia](https://github.com/tronba/Tinymedia) - Lightweight media server
 - [Leaflet](https://leafletjs.com/) - Interactive map library
+
+---
+
+## Acknowledgements
+
+The ADS-B aircraft tracking installation (readsb + tar1090) is adapted from the [automatic installation script by wiedehopf](https://github.com/wiedehopf/adsb-scripts/wiki/Automatic-installation-for-readsb). The upstream script handles a wide range of configurations and feeder setups; Delling's version is streamlined for offline/emergency use with on-demand SDR switching.
 
 ---
 

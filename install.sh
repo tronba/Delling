@@ -10,6 +10,7 @@
 #   • Multi-mode Radio (rtl_fm_python_webgui)
 #   • DAB+ Radio (welle-cli + custom web UI)
 #   • AIS Ship Tracking (AIS-catcher)
+#   • ADS-B Aircraft Tracking (readsb + tar1090)
 #   • Offline Maps (Leaflet + MBTiles tile server)
 #   • Tinymedia (media server)
 #   • Kiwix (offline Wikipedia)
@@ -147,6 +148,7 @@ ask_questions() {
     echo "  • Delling Dashboard (service control panel)"
     echo "  • Multi-mode Radio, DAB+ Radio"
     echo "  • AIS Ship Tracking"
+    echo "  • ADS-B Aircraft Tracking (readsb + tar1090)"
     echo "  • Offline Maps (Leaflet + AIS overlay)"
     echo "  • Tinymedia (media server)"
     echo "  • Kiwix (offline Wikipedia)"
@@ -184,6 +186,7 @@ ask_questions() {
     echo "    Tinymedia ........... port 5000"
     echo "    Kiwix ............... port 8000"
     echo "    AIS Ship Tracking ... port 8100"
+    echo "    ADS-B Tracking ...... port 8090"
     echo "    Offline Maps ........ port 8082"
     echo ""
 
@@ -233,6 +236,12 @@ phase1_base_system() {
         librtlsdr-dev \
         libsqlite3-dev \
         sqlite3 \
+        ncurses-dev \
+        ncurses-bin \
+        zlib1g-dev \
+        zlib1g \
+        pkg-config \
+        lighttpd \
         network-manager \
         dnsmasq \
         nftables \
@@ -449,6 +458,9 @@ phase3_dashboard() {
 $DELLING_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start rtl-fm-radio, /usr/bin/systemctl stop rtl-fm-radio
 $DELLING_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start welle-cli, /usr/bin/systemctl stop welle-cli
 $DELLING_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start aiscatcher, /usr/bin/systemctl stop aiscatcher
+$DELLING_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start readsb, /usr/bin/systemctl stop readsb
+$DELLING_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start tar1090, /usr/bin/systemctl stop tar1090
+$DELLING_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start lighttpd, /usr/bin/systemctl stop lighttpd
 $DELLING_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start tinymedia, /usr/bin/systemctl stop tinymedia
 $DELLING_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start kiwix, /usr/bin/systemctl stop kiwix
 $DELLING_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start delling-maps, /usr/bin/systemctl stop delling-maps
@@ -646,7 +658,7 @@ EOF
     print_step "Creating SDR stop-all script..."
     cat > /opt/delling/scripts/stop-all-sdr.sh << 'EOF'
 #!/bin/bash
-sudo systemctl stop rtl-fm-radio welle-cli aiscatcher 2>/dev/null
+sudo systemctl stop rtl-fm-radio welle-cli aiscatcher readsb tar1090 lighttpd 2>/dev/null
 sleep 1
 EOF
     chmod +x /opt/delling/scripts/stop-all-sdr.sh
@@ -845,6 +857,215 @@ WantedBy=multi-user.target
 EOF
     sudo systemctl daemon-reload
 
+    # ─── readsb + tar1090 (ADS-B Tracking) ───
+    print_step "Building and installing readsb (ADS-B decoder)..."
+
+    READSB_BUILD="/usr/local/share/adsb-wiki/readsb-install"
+    sudo mkdir -p "$READSB_BUILD"
+    sudo chown -R "$DELLING_USER:$DELLING_USER" "$READSB_BUILD"
+
+    # Clone readsb source
+    if [ -d "$READSB_BUILD/git" ]; then
+        print_info "readsb source exists, updating..."
+        pushd "$READSB_BUILD/git" > /dev/null && git fetch --depth 2 origin stale && git reset --hard FETCH_HEAD && popd > /dev/null
+    else
+        git clone --depth 2 --single-branch --branch stale https://github.com/wiedehopf/readsb.git "$READSB_BUILD/git"
+    fi
+
+    # Build readsb
+    pushd "$READSB_BUILD/git" > /dev/null
+    make clean 2>/dev/null || true
+    THREADS=$(( $(grep -c ^processor /proc/cpuinfo) - 1 ))
+    THREADS=$(( THREADS > 0 ? THREADS : 1 ))
+    CFLAGS="-O2 -march=native -mtune=native"
+    # Disable unaligned access for ARM
+    if uname -m | grep -qs -e arm -e aarch64 && gcc -mno-unaligned-access -x c /dev/null -o /dev/null -E 2>/dev/null; then
+        CFLAGS+=" -mno-unaligned-access"
+    fi
+    if make "-j${THREADS}" RTLSDR=yes OPTIMIZE="$CFLAGS"; then
+        sudo cp -f readsb /usr/bin/readsb
+        sudo cp -f viewadsb /usr/bin/viewadsb
+        print_step "readsb built and installed!"
+    else
+        record_failure "readsb: Build failed (missing dependencies?)"
+    fi
+    popd > /dev/null
+
+    # Create readsb system user
+    if ! id -u readsb &>/dev/null; then
+        sudo adduser --system --no-create-home readsb
+        sudo adduser readsb plugdev 2>/dev/null || true
+    fi
+
+    # Create default config
+    if ! [ -f /etc/default/readsb ]; then
+        sudo tee /etc/default/readsb > /dev/null << 'READSBEOF'
+# readsb configuration
+# Sourced by readsb.service
+
+RECEIVER_OPTIONS="--device 0 --device-type rtlsdr --gain -10 --ppm 0"
+DECODER_OPTIONS="--max-range 450 --write-json-every 1"
+NET_OPTIONS="--net --net-heartbeat 60 --net-ro-size 1280 --net-ro-interval 0.05 --net-ri-port 30001 --net-ro-port 30002 --net-sbs-port 30003 --net-bi-port 30004,30104 --net-bo-port 30005"
+JSON_OPTIONS="--json-location-accuracy 2 --range-outline-hours 24"
+READSBEOF
+    fi
+
+    # Create readsb service
+    print_step "Creating readsb service..."
+    sudo tee /lib/systemd/system/readsb.service > /dev/null << 'EOF'
+[Unit]
+Description=readsb ADS-B Receiver
+Documentation=https://github.com/wiedehopf/readsb
+Wants=network.target
+After=network.target
+
+[Service]
+User=readsb
+EnvironmentFile=/etc/default/readsb
+ExecStart=/usr/bin/readsb $RECEIVER_OPTIONS $DECODER_OPTIONS $NET_OPTIONS $JSON_OPTIONS --write-json /run/readsb --quiet
+Type=simple
+Restart=on-failure
+RestartSec=5
+SyslogIdentifier=readsb
+RuntimeDirectory=readsb
+RuntimeDirectoryMode=0755
+Nice=-5
+
+[Install]
+WantedBy=default.target
+EOF
+
+    # Disable auto-start — controlled by dashboard like other SDR services
+    sudo systemctl daemon-reload
+    sudo systemctl disable readsb 2>/dev/null || true
+
+    # Install readsb-gain utility
+    print_step "Installing readsb utility scripts..."
+    sudo tee /usr/local/bin/readsb-gain > /dev/null << 'EOF'
+#!/bin/bash
+validre='^([^ ]*)$'
+gain="$1"
+if ! [[ $gain =~ $validre ]] ; then echo "Error, invalid gain!"; exit 1; fi
+if ! grep gain /etc/default/readsb &>/dev/null; then sudo sed -i -e 's/RECEIVER_OPTIONS="/RECEIVER_OPTIONS="--gain 49.6 /' /etc/default/readsb; fi
+sudo sed -i -E -e "/^[[:space:]]*#/b; /--gain/ s/--gain[ =][^ \"]*/--gain $gain/" /etc/default/readsb
+echo "$gain" | sudo tee /run/readsb/setGain || sudo systemctl restart readsb
+EOF
+    sudo chmod a+x /usr/local/bin/readsb-gain
+
+    # Install readsb-set-location utility
+    sudo tee /usr/local/bin/readsb-set-location > /dev/null << 'EOF'
+#!/bin/bash
+lat=$(echo $1 | tr -cd '[:digit:].-')
+lon=$(echo $2 | tr -cd '[:digit:].-')
+
+if ! awk "BEGIN{ exit ($lat > 90) }" || ! awk "BEGIN{ exit ($lat < -90) }"; then
+    echo "Invalid latitude: $lat (must be between -90 and 90)"
+    echo "Usage: readsb-set-location 51.52830 -0.38178"
+    exit 1
+fi
+if ! awk "BEGIN{ exit ($lon > 180) }" || ! awk "BEGIN{ exit ($lon < -180) }"; then
+    echo "Invalid longitude: $lon (must be between -180 and 180)"
+    echo "Usage: readsb-set-location 51.52830 -0.38178"
+    exit 1
+fi
+
+echo "Setting Latitude: $lat"
+echo "Setting Longitude: $lon"
+if ! grep -e '--lon' /etc/default/readsb &>/dev/null; then sed -i -e 's/DECODER_OPTIONS="/DECODER_OPTIONS="--lon 0 /' /etc/default/readsb; fi
+if ! grep -e '--lat' /etc/default/readsb &>/dev/null; then sed -i -e 's/DECODER_OPTIONS="/DECODER_OPTIONS="--lat 0 /' /etc/default/readsb; fi
+sed -i -E -e "s/--lat .?[0-9]*.?[0-9]* /--lat $lat /" /etc/default/readsb
+sed -i -E -e "s/--lon .?[0-9]*.?[0-9]* /--lon $lon /" /etc/default/readsb
+systemctl restart readsb 2>/dev/null || true
+echo "Location set! Restart readsb to apply."
+EOF
+    sudo chmod a+x /usr/local/bin/readsb-set-location
+
+    # ─── tar1090 (ADS-B web interface) ───
+    print_step "Installing tar1090 web interface..."
+    TAR1090_INSTALL="/usr/local/share/tar1090"
+    sudo mkdir -p "$TAR1090_INSTALL"
+
+    print_info "Running tar1090 install script from GitHub..."
+    pushd /tmp > /dev/null
+    if wget -q -O tar1090-install.sh https://raw.githubusercontent.com/wiedehopf/tar1090/master/install.sh; then
+        sudo bash tar1090-install.sh /run/readsb
+        print_step "tar1090 installed!"
+    else
+        record_failure "tar1090: Failed to download install script"
+    fi
+    popd > /dev/null
+
+    # Configure lighttpd to only listen on port 8090 (not port 80)
+    print_step "Configuring lighttpd for tar1090 on port 8090 only..."
+
+    # Disable lighttpd default port 80 listener — conflicts with captive portal
+    sudo tee /etc/lighttpd/lighttpd.conf > /dev/null << 'LIGHTY_EOF'
+# Delling: lighttpd serves tar1090 ONLY on port 8090
+# Port 80 is reserved for captive portal redirect
+
+server.modules = (
+    "mod_access",
+    "mod_alias",
+    "mod_setenv",
+    "mod_redirect",
+)
+
+# Do NOT listen on port 80 — Delling captive portal uses it
+server.port = 8090
+server.document-root = "/var/www/html"
+server.upload-dirs = ( "/var/cache/lighttpd/uploads" )
+server.errorlog = "/var/log/lighttpd/error.log"
+server.pid-file = "/run/lighttpd.pid"
+server.username = "www-data"
+server.groupname = "www-data"
+
+index-file.names = ( "index.html" )
+mimetype.assign = (
+    ".html" => "text/html",
+    ".css"  => "text/css",
+    ".js"   => "application/javascript",
+    ".json" => "application/json",
+    ".png"  => "image/png",
+    ".jpg"  => "image/jpeg",
+    ".svg"  => "image/svg+xml",
+    ".ico"  => "image/x-icon",
+)
+
+# Include tar1090 config
+include_shell "cat /etc/lighttpd/conf-enabled/*.conf 2>/dev/null || true"
+LIGHTY_EOF
+
+    # Remove the otherport config (we handle port in main config)
+    sudo rm -f /etc/lighttpd/conf-enabled/95-tar1090-otherport.conf
+    sudo rm -f /etc/lighttpd/conf-available/95-tar1090-otherport.conf
+
+    # Disable lighttpd auto-start — it starts with readsb via tar1090 service
+    sudo systemctl disable lighttpd 2>/dev/null || true
+    sudo systemctl disable tar1090 2>/dev/null || true
+    sudo systemctl stop lighttpd 2>/dev/null || true
+    sudo systemctl stop tar1090 2>/dev/null || true
+
+    # Create a combined start script for readsb + tar1090 + lighttpd
+    print_step "Creating ADS-B start/stop scripts..."
+    cat > /opt/delling/scripts/start-adsb.sh << 'EOF'
+#!/bin/bash
+# Start readsb + tar1090 + lighttpd together
+sudo systemctl start readsb
+sleep 2
+sudo systemctl start tar1090
+sudo systemctl start lighttpd
+EOF
+    chmod +x /opt/delling/scripts/start-adsb.sh
+
+    cat > /opt/delling/scripts/stop-adsb.sh << 'EOF'
+#!/bin/bash
+# Stop readsb + tar1090 + lighttpd together
+sudo systemctl stop tar1090
+sudo systemctl stop lighttpd
+sudo systemctl stop readsb
+EOF
+    chmod +x /opt/delling/scripts/stop-adsb.sh
+
     print_step "Phase 6 complete!"
 }
 
@@ -875,6 +1096,26 @@ phase7_finalize() {
 
     print_step "Starting map server..."
     sudo systemctl start delling-maps
+
+    # ─── Optional: Set ADS-B receiver location ───
+    echo ""
+    print_info "ADS-B (readsb) works best with a set location for range display."
+    read -p "Set ADS-B receiver location now? [y/N] " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        echo ""
+        echo "Enter your coordinates in decimal format (e.g. 59.9139 10.7522 for Oslo)"
+        read -p "Latitude:  " ADSB_LAT
+        read -p "Longitude: " ADSB_LON
+        if [ -n "$ADSB_LAT" ] && [ -n "$ADSB_LON" ]; then
+            sudo /usr/local/bin/readsb-set-location "$ADSB_LAT" "$ADSB_LON"
+            print_step "ADS-B location set to $ADSB_LAT, $ADSB_LON"
+        else
+            print_info "Skipped. Set later with: sudo readsb-set-location <lat> <lon>"
+        fi
+    else
+        print_info "Skipped. Set later with: sudo readsb-set-location <lat> <lon>"
+    fi
 
     print_step "Phase 7 complete!"
 }
@@ -923,6 +1164,7 @@ main() {
     echo "  ✓ Multi-mode Radio ..... port 10100 (on-demand via dashboard)"
     echo "  ✓ DAB+ Radio ........... port 7979  (on-demand via dashboard)"
     echo "  ✓ AIS Ship Tracking .... port 8100  (on-demand via dashboard)"
+    echo "  ✓ ADS-B Tracking ...... port 8090  (on-demand via dashboard)"
     echo ""
     echo "  Map viewer shows AIS ships automatically when AIS is running."
     echo ""
