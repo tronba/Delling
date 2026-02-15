@@ -7,28 +7,39 @@ from flask import Flask, jsonify, render_template_string
 
 app = Flask(__name__)
 
-# Service definitions
+# Service definitions — ordered for 3-column dashboard layout
+# Row 1: Radio
+# Row 2: Media / Knowledge
+# Row 3: Tracking + SDR off
 SERVICES = {
     'fm-radio': {
-        'name': 'Multi-mode Radio',
+        'name': 'Radio',
         'icon': '📻',
         'service': 'rtl-fm-radio',
         'url': 'http://192.168.4.1:10100',
         'sdr': True,
         'always_on': False,
-        'description': None  # Has built-in antenna recommendations
+        'description': None
     },
     'dab-radio': {
-        'name': 'DAB+ Radio',
+        'name': 'DAB+',
         'icon': '📻',
         'service': 'welle-cli',
         'url': 'http://192.168.4.1:7979',
         'sdr': True,
         'always_on': False,
-        'description': 'Recommended antenna: 37-75 cm'
+        'description': 'Antenna: 37-75 cm'
+    },
+    'meshtastic': {
+        'name': 'Meshtastic',
+        'icon': '💬',
+        'service': None,
+        'url': 'http://192.168.4.10',
+        'sdr': False,
+        'always_on': True
     },
     'media': {
-        'name': 'Media Server',
+        'name': 'Media',
         'icon': '🎬',
         'service': 'tinymedia',
         'url': 'http://192.168.4.1:5000',
@@ -36,7 +47,7 @@ SERVICES = {
         'always_on': True
     },
     'kiwix': {
-        'name': 'Kiwix',
+        'name': 'Wiki',
         'icon': '📚',
         'service': 'kiwix',
         'url': 'http://192.168.4.1:8000',
@@ -58,25 +69,17 @@ SERVICES = {
         'url': 'http://192.168.4.1:8100',
         'sdr': True,
         'always_on': False,
-        'description': 'Recommended antenna: 46 cm'
+        'description': 'Antenna: 46 cm'
     },
     'adsb': {
         'name': 'Aircraft',
         'icon': '✈️',
         'service': 'readsb',
-        'url': 'http://192.168.4.1:8090/tar1090',
+        'url': 'http://192.168.4.1:8090/tar1090/?customTiles=http://192.168.4.1:8082/tiles/{z}/{x}/{y}',
         'sdr': True,
         'always_on': False,
-        'description': 'ADS-B tracking',
+        'description': 'Antenna: 7 cm (1090 MHz)',
         'extra_services': ['tar1090', 'lighttpd']
-    },
-    'meshtastic': {
-        'name': 'Meshtastic',
-        'icon': '💬',
-        'service': None,
-        'url': 'http://192.168.4.10',
-        'sdr': False,
-        'always_on': True
     },
 }
 
@@ -109,8 +112,8 @@ HTML_TEMPLATE = '''
         }
         .grid {
             display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 16px;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
             max-width: 500px;
             margin: 0 auto;
         }
@@ -119,7 +122,7 @@ HTML_TEMPLATE = '''
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            padding: 24px 16px;
+            padding: 16px 8px;
             border: none;
             border-radius: 16px;
             background: linear-gradient(145deg, #2d2d44, #252538);
@@ -127,7 +130,7 @@ HTML_TEMPLATE = '''
             cursor: pointer;
             transition: all 0.2s ease;
             box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-            min-height: 120px;
+            min-height: 100px;
         }
         .btn:hover {
             transform: translateY(-2px);
@@ -141,11 +144,11 @@ HTML_TEMPLATE = '''
             pointer-events: none;
         }
         .btn .icon {
-            font-size: 40px;
-            margin-bottom: 8px;
+            font-size: 32px;
+            margin-bottom: 6px;
         }
         .btn .name {
-            font-size: 16px;
+            font-size: 14px;
             font-weight: 500;
         }
         .btn .status {

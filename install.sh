@@ -1043,6 +1043,27 @@ LIGHTY_EOF
     sudo rm -f /etc/lighttpd/conf-enabled/95-tar1090-otherport.conf
     sudo rm -f /etc/lighttpd/conf-available/95-tar1090-otherport.conf
 
+    # Configure tar1090 to use Delling's local tile server instead of OpenStreetMap
+    # tar1090 supports customTiles via localStorage — we set it in config.js so it's
+    # ready for every browser on first visit. MapType_tar1090 selects the layer by name.
+    print_step "Configuring tar1090 to use local offline map tiles..."
+    TAR1090_CONFIG="/usr/local/share/tar1090/html/config.js"
+    if [ -f "$TAR1090_CONFIG" ]; then
+        # Point tar1090 at Delling's MBTiles tile server on port 8082
+        sudo tee -a "$TAR1090_CONFIG" > /dev/null << 'TARCFG'
+
+// Delling: Use local offline tile server instead of OpenStreetMap
+// Sets the custom tile URL in localStorage so tar1090's layers.js
+// creates a "Custom tiles" base layer from our local MBTiles server.
+try { localStorage.setItem('customTiles', 'http://192.168.4.1:8082/tiles/{z}/{x}/{y}'); } catch(e) {}
+MapType_tar1090 = "custom_tiles";
+TARCFG
+        print_step "tar1090 configured for offline map tiles!"
+    else
+        print_info "tar1090 config.js not found, skipping offline tile config"
+        print_info "You can set it manually later in $TAR1090_CONFIG"
+    fi
+
     # Disable lighttpd auto-start — it starts with readsb via tar1090 service
     sudo systemctl disable lighttpd 2>/dev/null || true
     sudo systemctl disable tar1090 2>/dev/null || true

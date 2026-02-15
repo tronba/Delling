@@ -125,6 +125,21 @@ def api_tilesets():
     return jsonify(result)
 
 
+@app.route('/tiles/<int:z>/<int:x>/<int:y>')
+def serve_default_tile(z, x, y):
+    """Serve a tile from the first available tileset (for tar1090 integration).
+
+    This route allows external services like tar1090 to use
+    http://192.168.4.1:8082/tiles/{z}/{x}/{y} without knowing
+    the tileset name.
+    """
+    tilesets = _find_mbtiles()
+    if not tilesets:
+        return Response('No tileset available', status=404)
+    first_name = next(iter(tilesets))
+    return serve_tile(first_name, z, x, y)
+
+
 @app.route('/tiles/<tileset>/<int:z>/<int:x>/<int:y>')
 def serve_tile(tileset, z, x, y):
     """Serve a single map tile from MBTiles."""
