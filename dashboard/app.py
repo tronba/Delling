@@ -240,7 +240,7 @@ HTML_TEMPLATE = '''
                     // Delay to let SDR service fully initialize
                     setTimeout(() => {
                         window.open(url, '_blank');
-                    }, 3000);
+                    }, 4000);
                 }
             } catch (err) {
                 console.error('Error:', err);

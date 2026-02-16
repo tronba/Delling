@@ -2,7 +2,7 @@
 
 **A portable emergency information hub for offline communication, media, and radio.**
 
-Delling – named after the Norse god of dawn – is a self-contained hub that runs on Orange Pi or Raspberry Pi. Connect via WiFi, control everything from your browser. Built for power outages, emergencies, cabins, and community resilience.
+Delling – named after the Norse god of dawn, is a self-contained hub that runs on Orange Pi or Raspberry Pi. Connect to it from a cellphone via WiFi, all normal features are available from the browser. Built for power outages, emergencies, cabins, and community resilience.
 
 ---
 
