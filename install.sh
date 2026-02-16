@@ -378,7 +378,8 @@ NETEOF
     if sudo nft add table ip captive 2>/dev/null; then
         sudo nft flush table ip captive 2>/dev/null || true
         if sudo nft add chain ip captive prerouting '{ type nat hook prerouting priority -100 ; }' 2>/dev/null && \
-           sudo nft add rule ip captive prerouting iifname "$WIFI_IFACE" tcp dport 80 redirect to :8080 2>/dev/null; then
+           sudo nft add rule ip captive prerouting iifname "$WIFI_IFACE" tcp dport 80 redirect to :8080 2>/dev/null && \
+           sudo nft add rule ip captive prerouting iifname "$WIFI_IFACE" tcp dport 443 redirect to :8443 2>/dev/null; then
             NFT_OK=true
             print_info "Using nftables for port redirect"
             sudo nft list ruleset | sudo tee /etc/nftables.conf > /dev/null
@@ -411,11 +412,13 @@ NETEOF
 
         # Flush old redirect rules
         sudo $IPTABLES_CMD -t nat -D PREROUTING -i "$WIFI_IFACE" -p tcp --dport 80 -j REDIRECT --to-port 8080 2>/dev/null || true
-        # Add iptables redirect
-        if sudo $IPTABLES_CMD -t nat -A PREROUTING -i "$WIFI_IFACE" -p tcp --dport 80 -j REDIRECT --to-port 8080; then
-            print_step "iptables redirect rule added successfully"
+        sudo $IPTABLES_CMD -t nat -D PREROUTING -i "$WIFI_IFACE" -p tcp --dport 443 -j REDIRECT --to-port 8443 2>/dev/null || true
+        # Add iptables redirects (HTTP and HTTPS)
+        if sudo $IPTABLES_CMD -t nat -A PREROUTING -i "$WIFI_IFACE" -p tcp --dport 80 -j REDIRECT --to-port 8080 && \
+           sudo $IPTABLES_CMD -t nat -A PREROUTING -i "$WIFI_IFACE" -p tcp --dport 443 -j REDIRECT --to-port 8443; then
+            print_step "iptables redirect rules added (port 80→8080, 443→8443)"
         else
-            record_failure "Network: iptables redirect rule could not be added"
+            record_failure "Network: iptables redirect rules could not be added"
         fi
         # Persist iptables rules across reboots
         sudo sh -c "$IPTABLES_SAVE_CMD > /etc/iptables.rules"
@@ -457,6 +460,62 @@ IPTEOF
             record_failure "Network: iptables redirect rule not active"
         fi
     fi
+
+    # --- HTTPS captive portal redirect ---
+    # Modern browsers try HTTPS first when typing a bare IP/domain.
+    # We intercept port 443, terminate TLS with a self-signed cert,
+    # and redirect the browser to the HTTP dashboard.
+    print_step "Setting up HTTPS captive portal redirect..."
+    sudo mkdir -p /opt/delling/ssl
+    if [ ! -f /opt/delling/ssl/captive.pem ]; then
+        sudo openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
+            -keyout /opt/delling/ssl/captive.key \
+            -out /opt/delling/ssl/captive.pem \
+            -subj '/CN=Delling Captive Portal' 2>/dev/null
+        sudo chown -R "$DELLING_USER:$DELLING_USER" /opt/delling/ssl
+        print_step "Self-signed certificate generated"
+    fi
+
+    cat > /opt/delling/scripts/https-redirect.py << 'HTTPSEOF'
+#!/usr/bin/env python3
+"""Tiny HTTPS server that redirects all requests to the Delling dashboard.
+Modern browsers try HTTPS first — this catches those and sends them to HTTP."""
+import ssl, http.server
+
+class RedirectHandler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(302)
+        self.send_header('Location', 'http://192.168.4.1:8080')
+        self.end_headers()
+    do_POST = do_HEAD = do_GET
+    def log_message(self, *args): pass  # silent
+
+ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+ctx.load_cert_chain('/opt/delling/ssl/captive.pem', '/opt/delling/ssl/captive.key')
+srv = http.server.HTTPServer(('0.0.0.0', 8443), RedirectHandler)
+srv.socket = ctx.wrap_socket(srv.socket, server_side=True)
+srv.serve_forever()
+HTTPSEOF
+    chmod +x /opt/delling/scripts/https-redirect.py
+
+    sudo tee /etc/systemd/system/delling-https-redirect.service > /dev/null << EOF
+[Unit]
+Description=Delling HTTPS Captive Portal Redirect
+After=network.target
+
+[Service]
+Type=simple
+User=$DELLING_USER
+ExecStart=/usr/bin/python3 /opt/delling/scripts/https-redirect.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    sudo systemctl daemon-reload
+    sudo systemctl enable delling-https-redirect
+    print_step "HTTPS redirect service created"
 
     # --- Disable IP forwarding (no internet sharing) ---
     print_step "Disabling IP forwarding..."
@@ -1128,6 +1187,7 @@ phase7_finalize() {
 
     print_step "Enabling auto-start services..."
     sudo systemctl enable delling-dashboard
+    sudo systemctl enable delling-https-redirect
     sudo systemctl enable kiwix
     sudo systemctl enable delling-maps
     # Enable whichever redirect method was configured in phase 2
