@@ -245,9 +245,9 @@ phase1_base_system() {
         lighttpd \
         network-manager \
         dnsmasq \
-        nftables \
         iw \
         wireless-tools \
+        exfat-fuse \
         exfatprogs
 
     # --- Optional packages (may not be in all repos) ---
@@ -259,6 +259,10 @@ phase1_base_system() {
             record_failure "Package '$pkg' not available in repos (may need manual install)"
         fi
     done
+
+    # --- Stop lighttpd (auto-starts on port 80 after apt install, conflicts with captive portal) ---
+    sudo systemctl stop lighttpd 2>/dev/null || true
+    sudo systemctl disable lighttpd 2>/dev/null || true
 
     # --- Ensure user can access USB SDR devices ---
     if ! groups "$DELLING_USER" | grep -q plugdev; then
@@ -391,14 +395,32 @@ NETEOF
         sudo apt install -y iptables 2>/dev/null || true
         # Remove any stale nftables rules
         sudo nft delete table ip captive 2>/dev/null || true
-        # Flush old iptables redirect rules
-        sudo iptables -t nat -D PREROUTING -i "$WIFI_IFACE" -p tcp --dport 80 -j REDIRECT --to-port 8080 2>/dev/null || true
+
+        # On Debian Trixie+, the default 'iptables' is iptables-nft which uses
+        # the nf_tables kernel backend — the same one that just failed above.
+        # Use iptables-legacy which talks directly to the kernel xtables API.
+        IPTABLES_CMD="iptables"
+        IPTABLES_SAVE_CMD="iptables-save"
+        IPTABLES_RESTORE_CMD="iptables-restore"
+        if command -v iptables-legacy &>/dev/null; then
+            IPTABLES_CMD="iptables-legacy"
+            IPTABLES_SAVE_CMD="iptables-legacy-save"
+            IPTABLES_RESTORE_CMD="iptables-legacy-restore"
+            print_info "Using iptables-legacy (avoiding nf_tables backend)"
+        fi
+
+        # Flush old redirect rules
+        sudo $IPTABLES_CMD -t nat -D PREROUTING -i "$WIFI_IFACE" -p tcp --dport 80 -j REDIRECT --to-port 8080 2>/dev/null || true
         # Add iptables redirect
-        sudo iptables -t nat -A PREROUTING -i "$WIFI_IFACE" -p tcp --dport 80 -j REDIRECT --to-port 8080
+        if sudo $IPTABLES_CMD -t nat -A PREROUTING -i "$WIFI_IFACE" -p tcp --dport 80 -j REDIRECT --to-port 8080; then
+            print_step "iptables redirect rule added successfully"
+        else
+            record_failure "Network: iptables redirect rule could not be added"
+        fi
         # Persist iptables rules across reboots
-        sudo sh -c 'iptables-save > /etc/iptables.rules'
+        sudo sh -c "$IPTABLES_SAVE_CMD > /etc/iptables.rules"
         # Create systemd service to restore rules on boot
-        cat <<'IPTEOF' | sudo tee /etc/systemd/system/iptables-restore.service > /dev/null
+        cat <<IPTEOF | sudo tee /etc/systemd/system/iptables-restore.service > /dev/null
 [Unit]
 Description=Restore iptables rules for Delling captive portal
 After=NetworkManager.service
@@ -407,7 +429,7 @@ Wants=NetworkManager.service
 [Service]
 Type=oneshot
 ExecStartPre=/bin/sleep 5
-ExecStart=/bin/sh -c 'iptables-restore < /etc/iptables.rules'
+ExecStart=/bin/sh -c '$IPTABLES_RESTORE_CMD < /etc/iptables.rules'
 RemainAfterExit=yes
 Restart=on-failure
 RestartSec=10
@@ -429,7 +451,7 @@ IPTEOF
             record_failure "Network: nftables redirect rule not active"
         fi
     else
-        if sudo iptables -t nat -L PREROUTING -n 2>/dev/null | grep -q 'redir ports 8080'; then
+        if sudo $IPTABLES_CMD -t nat -L PREROUTING -n 2>/dev/null | grep -q 'redir ports 8080'; then
             print_step "iptables redirect verified!"
         else
             record_failure "Network: iptables redirect rule not active"
