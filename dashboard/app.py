@@ -55,7 +55,7 @@ SERVICES = {
         'always_on': True
     },
     'maps': {
-        'name': 'Maps',
+        'name': 'World Map',
         'icon': '🗺️',
         'service': 'delling-maps',
         'url': 'http://192.168.4.1:8082',
@@ -63,7 +63,7 @@ SERVICES = {
         'always_on': True
     },
     'ships': {
-        'name': 'Ships',
+        'name': 'Ships AIS',
         'icon': '🚢',
         'service': 'aiscatcher',
         'url': 'http://192.168.4.1:8100',
@@ -72,13 +72,13 @@ SERVICES = {
         'description': 'Antenna: 46 cm'
     },
     'adsb': {
-        'name': 'Aircraft',
+        'name': 'Aircraft ADS-B',
         'icon': '✈️',
         'service': 'readsb',
         'url': 'http://192.168.4.1:8090/tar1090/?customTiles=http://192.168.4.1:8082/tiles/{z}/{x}/{y}',
         'sdr': True,
         'always_on': False,
-        'description': 'Antenna: 7 cm (1090 MHz)',
+        'description': 'Antenna: 27 cm (1090 MHz)',
         'extra_services': ['tar1090', 'lighttpd']
     },
 }
