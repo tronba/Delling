@@ -25,7 +25,7 @@ Delling – named after the Norse god of dawn, is a self-contained hub that runs
 | Component | Purpose |
 |-----------|---------|
 | Orange Pi 3 (1.5GB+) or Raspberry Pi 4/5 | Main computer |
-| SD card (16GB minimum recommended) | Operating system |
+| SD card (8GB minimum recommended) | Operating system |
 | RTL-SDR dongle | Radio reception |
 | USB storage (exFAT formatted) 64gb+ recommended | Media and offline content |
 | Heltec V3 (optional) | Meshtastic mesh node |
