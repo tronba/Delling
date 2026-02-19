@@ -28,7 +28,7 @@ Delling – named after the Norse god of dawn, is a self-contained hub that runs
 | SD card (8GB minimum recommended) | Operating system |
 | RTL-SDR dongle | Radio reception |
 | USB storage (exFAT formatted) 64gb+ recommended | Media and offline content |
-| Heltec V3 (optional) | Meshtastic mesh node |
+| Heltec V3 | Meshtastic mesh node |
 
 **Networking:** Delling creates its own WiFi access point. Devices connect directly to it. The Ethernet port can be used for initial setup (internet access) or to connect Delling to an existing network.
 
