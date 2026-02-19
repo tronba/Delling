@@ -382,7 +382,22 @@ NETEOF
            sudo nft add rule ip captive prerouting iifname "$WIFI_IFACE" tcp dport 443 redirect to :8443 2>/dev/null; then
             NFT_OK=true
             print_info "Using nftables for port redirect"
-            sudo nft list ruleset | sudo tee /etc/nftables.conf > /dev/null
+            # Save ONLY the captive table — saving the full ruleset (nft list ruleset)
+            # captures NetworkManager's tables too, and nft -f loads atomically: if any
+            # NM table conflicts at boot, the ENTIRE load fails and the redirect is lost.
+            sudo tee /etc/nftables.conf > /dev/null << NFTEOF
+#!/usr/sbin/nft -f
+# Delling captive portal redirect rules
+table ip captive
+flush table ip captive
+table ip captive {
+    chain prerouting {
+        type nat hook prerouting priority -100; policy accept;
+        iifname "$WIFI_IFACE" tcp dport 80 redirect to :8080
+        iifname "$WIFI_IFACE" tcp dport 443 redirect to :8443
+    }
+}
+NFTEOF
             sudo systemctl enable nftables
             REDIRECT_METHOD="nftables"
         else
@@ -466,7 +481,8 @@ IPTEOF
     # We intercept port 443, terminate TLS with a self-signed cert,
     # and redirect the browser to the HTTP dashboard.
     print_step "Setting up HTTPS captive portal redirect..."
-    sudo mkdir -p /opt/delling/ssl
+    sudo mkdir -p /opt/delling/ssl /opt/delling/scripts
+    sudo chown -R "$DELLING_USER:$DELLING_USER" /opt/delling
     if [ ! -f /opt/delling/ssl/captive.pem ]; then
         sudo openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
             -keyout /opt/delling/ssl/captive.key \
