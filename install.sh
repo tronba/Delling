@@ -436,7 +436,7 @@ NFTEOF
             record_failure "Network: iptables redirect rules could not be added"
         fi
         # Persist iptables rules across reboots
-        sudo sh -c "$IPTABLES_SAVE_CMD > /etc/iptables.rules"
+        sudo $IPTABLES_SAVE_CMD | sudo tee /etc/iptables.rules > /dev/null
         # Create systemd service to restore rules on boot
         cat <<IPTEOF | sudo tee /etc/systemd/system/iptables-restore.service > /dev/null
 [Unit]
@@ -446,6 +446,7 @@ Wants=NetworkManager.service
 
 [Service]
 Type=oneshot
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 ExecStartPre=/bin/sleep 5
 ExecStart=/bin/sh -c '$IPTABLES_RESTORE_CMD < /etc/iptables.rules'
 RemainAfterExit=yes
@@ -1216,6 +1217,9 @@ phase7_finalize() {
 
     print_step "Starting dashboard..."
     sudo systemctl start delling-dashboard
+
+    print_step "Starting HTTPS redirect..."
+    sudo systemctl start delling-https-redirect
 
     print_step "Starting map server..."
     sudo systemctl start delling-maps
