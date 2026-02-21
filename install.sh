@@ -284,6 +284,25 @@ phase2_network() {
     WIFI_IFACE=$(detect_wifi_interface)
     print_info "Detected WiFi interface: $WIFI_IFACE"
 
+    # --- Check WiFi country code (Raspberry Pi requirement) ---
+    if [ -f /etc/rpi-issue ]; then
+        # This is a Raspberry Pi - check if WiFi country is set
+        if ! iw reg get 2>/dev/null | grep -q "country"; then
+            print_error "WARNING: WiFi country code not set!"
+            print_info "On Raspberry Pi, you MUST set WiFi country before AP will work:"
+            print_info "  sudo raspi-config → Localisation Options → WLAN Country"
+            print_info ""
+            read -p "Continue anyway? [y/N] " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                exit 1
+            fi
+        else
+            COUNTRY=$(iw reg get 2>/dev/null | grep country | head -1 | awk '{print $2}' | tr -d ':')
+            print_step "WiFi country code: $COUNTRY"
+        fi
+    fi
+
     # --- Detect networking stack and prepare NetworkManager ---
     local net_stack
     net_stack=$(detect_network_stack)
