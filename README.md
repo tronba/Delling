@@ -4,7 +4,7 @@
 
 Delling – named after the Norse god of dawn, is a self-contained hub that runs on Orange Pi or Raspberry Pi. Connect to it from a cellphone via WiFi, all normal features are available from the browser. Built for power outages, emergencies, cabins, and community resilience.
 
----
+![01b](https://github.com/user-attachments/assets/574a298d-b5de-480c-92ce-de213467f564)
 
 ## Features
 
