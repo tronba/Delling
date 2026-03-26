@@ -659,6 +659,27 @@ phase4_always_on() {
     pushd "$SCRIPT_DIR/Tinymedia" > /dev/null
     if AUTO_YES=1 bash install_arm_no_venv.sh; then
         print_step "Tinymedia installed successfully!"
+
+        if systemctl list-unit-files | grep -q '^tinymedia\.service'; then
+            print_step "Adding Tinymedia boot-order override..."
+            sudo mkdir -p /etc/systemd/system/tinymedia.service.d
+            sudo tee /etc/systemd/system/tinymedia.service.d/delling.conf > /dev/null << 'EOF'
+[Unit]
+# Let Tinymedia wait for the USB mount in ExecStartPre instead of failing the
+# entire service if the mount becomes available slightly after boot.
+Requires=
+Wants=media-tronba-usb.mount
+After=network.target local-fs.target media-tronba-usb.mount
+EOF
+
+            print_step "Enabling Tinymedia service..."
+            sudo systemctl daemon-reload
+            sudo systemctl enable tinymedia 2>/dev/null || true
+            print_step "Starting Tinymedia service..."
+            sudo systemctl start tinymedia 2>/dev/null || true
+        else
+            record_failure "Tinymedia: installer completed but tinymedia.service was not created"
+        fi
     else
         record_failure "Tinymedia: Auto-install failed (USB drive may be missing)"
         print_info "You can run it manually later:"

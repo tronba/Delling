@@ -189,13 +189,13 @@ HTML_TEMPLATE = '''
     <h1>🌅 Delling Hub</h1>
     <div class="grid">
         {% for key, svc in services.items() %}
-        <button class="btn {% if svc.sdr %}sdr{% endif %}" onclick="startService('{{ key }}', '{{ svc.url }}', {{ 'true' if svc.always_on else 'false' }})">
+        <button class="btn {% if svc.sdr %}sdr{% endif %}" onclick="startService('{{ key }}', '{{ svc.url }}')">
             <span class="icon">{{ svc.icon }}</span>
             <span class="name">{{ svc.name }}</span>
             {% if svc.description %}
             <span class="description">{{ svc.description }}</span>
             {% endif %}
-            {% if not svc.always_on %}
+            {% if svc.service %}
             <span class="status" id="status-{{ key }}">-</span>
             {% endif %}
         </button>
@@ -209,43 +209,37 @@ HTML_TEMPLATE = '''
     <div class="footer">SDR services (orange) share the radio - only one runs at a time</div>
 
     <script>
-        async function startService(key, url, alwaysOn) {
+        async function startService(key, url) {
             const btn = event.currentTarget;
             btn.classList.add('loading');
-            
-            // For always-on services, just open the URL directly
-            if (alwaysOn) {
-                window.open(url, '_blank');
-                btn.classList.remove('loading');
-                return;
-            }
-            
+
             try {
                 // Check if service is already running
                 const statusResponse = await fetch('/api/status');
                 const statusData = await statusResponse.json();
-                
+
                 if (statusData[key]) {
                     // Service already running - open URL immediately
                     window.open(url, '_blank');
                     btn.classList.remove('loading');
                     return;
                 }
-                
+
                 // Service not running - start it
                 const response = await fetch('/api/start/' + key, { method: 'POST' });
                 const data = await response.json();
-                
+
                 if (data.success) {
-                    // Delay to let SDR service fully initialize
+                    // Give the service a moment to bind its port before opening.
                     setTimeout(() => {
                         window.open(url, '_blank');
-                    }, 4000);
+                    }, data.delay_ms || 2000);
                 }
             } catch (err) {
                 console.error('Error:', err);
+                window.open(url, '_blank');
             }
-            
+
             btn.classList.remove('loading');
             updateStatus();
         }
@@ -335,8 +329,9 @@ def start_service(service_key):
     # Start extra services (e.g. tar1090 + lighttpd for ADS-B)
     for extra in svc.get('extra_services', []):
         run_cmd(f"sudo systemctl start {extra}")
-    
-    return jsonify({'success': True, 'url': svc['url']})
+
+    delay_ms = 4000 if svc['sdr'] else 2000
+    return jsonify({'success': True, 'url': svc['url'], 'delay_ms': delay_ms})
 
 @app.route('/api/stop-sdr', methods=['POST'])
 def stop_sdr():
@@ -348,9 +343,6 @@ def stop_sdr():
 def get_status():
     status = {}
     for key, svc in SERVICES.items():
-        # Skip always-on services
-        if svc.get('always_on', False):
-            continue
         if svc['service']:
             status[key] = is_service_running(svc['service'])
         else:
