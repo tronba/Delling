@@ -71,6 +71,21 @@ record_failure() {
     print_error "$1"
 }
 
+apt_install_retry() {
+    local description="$1"
+    shift
+
+    if sudo apt install -y "$@"; then
+        return 0
+    fi
+
+    print_info "$description failed, refreshing apt metadata and retrying once..."
+    sudo apt clean
+    sudo rm -rf /var/lib/apt/lists/*
+    sudo apt update
+    sudo apt install -y --fix-missing "$@"
+}
+
 check_root() {
     if [ "$EUID" -eq 0 ]; then
         print_error "Do NOT run this script as root."
@@ -221,7 +236,7 @@ phase1_base_system() {
 
     # --- Core dependencies (must succeed) ---
     print_step "Installing core dependencies..."
-    sudo apt install -y \
+    if ! apt_install_retry "Core dependency installation" \
         git \
         python3 \
         python3-pip \
@@ -248,7 +263,11 @@ phase1_base_system() {
         iw \
         wireless-tools \
         exfat-fuse \
-        exfatprogs
+        exfatprogs; then
+        record_failure "Phase 1: Core dependency installation failed"
+        print_info "Fix the apt errors above, then rerun install.sh."
+        return 1
+    fi
 
     # --- Optional packages (may not be in all repos) ---
     print_step "Installing optional packages..."
@@ -804,6 +823,13 @@ phase6_sdr_apps() {
     fi
 
     print_step "Building rtl_fm C library..."
+    if ! apt_install_retry "rtl_fm build dependencies" \
+        build-essential \
+        pkg-config \
+        libusb-1.0-0-dev \
+        librtlsdr-dev; then
+        record_failure "Multi-mode Radio: dependency install failed"
+    fi
     pushd "$SCRIPT_DIR/rtl_fm_webgui" > /dev/null
     if bash build.sh; then
         print_step "Build successful!"
@@ -995,6 +1021,15 @@ EOF
 
     # Build readsb
     pushd "$READSB_BUILD/git" > /dev/null
+    if ! apt_install_retry "readsb build dependencies" \
+        build-essential \
+        pkg-config \
+        libusb-1.0-0-dev \
+        librtlsdr-dev \
+        libzstd-dev \
+        zlib1g-dev; then
+        record_failure "readsb: dependency install failed"
+    fi
     make clean 2>/dev/null || true
     THREADS=$(( $(grep -c ^processor /proc/cpuinfo) - 1 ))
     THREADS=$(( THREADS > 0 ? THREADS : 1 ))
@@ -1276,7 +1311,7 @@ main() {
     check_dependencies
     ask_questions
 
-    phase1_base_system
+    phase1_base_system || exit 1
     phase2_network
     phase3_dashboard
     phase4_always_on
