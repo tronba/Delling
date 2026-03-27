@@ -263,7 +263,8 @@ phase1_base_system() {
         iw \
         wireless-tools \
         exfat-fuse \
-        exfatprogs; then
+        exfatprogs \
+        udisks2; then
         record_failure "Phase 1: Core dependency installation failed"
         print_info "Fix the apt errors above, then rerun install.sh."
         return 1
@@ -287,6 +288,35 @@ phase1_base_system() {
     if ! groups "$DELLING_USER" | grep -q plugdev; then
         print_step "Adding $DELLING_USER to plugdev group (SDR access)..."
         sudo usermod -aG plugdev "$DELLING_USER"
+    fi
+
+    # --- USB auto-mount at /media/usb ---
+    print_step "Configuring USB auto-mount at /media/usb..."
+    sudo mkdir -p /media/usb
+    # Detect the USB storage partition (exclude eMMC, zram, mtd)
+    USB_DEV=$(lsblk -rno NAME,TYPE,TRAN 2>/dev/null | awk '$2=="part" && $3=="usb" {print "/dev/"$1}' | head -n1)
+    if [ -z "$USB_DEV" ]; then
+        USB_DEV=$(lsblk -rno NAME,TYPE 2>/dev/null | awk '$2=="part" {print "/dev/"$1}' \
+            | grep -Ev 'mmcblk|zram|mtdblock' | head -n1)
+    fi
+    if [ -n "$USB_DEV" ]; then
+        USB_UUID=$(sudo blkid -s UUID -o value "$USB_DEV" 2>/dev/null || true)
+        sudo sed -i '\|/media/usb|d' /etc/fstab
+        if [ -n "$USB_UUID" ]; then
+            echo "UUID=$USB_UUID /media/usb auto defaults,nofail 0 0" | sudo tee -a /etc/fstab > /dev/null
+            print_step "fstab: UUID=$USB_UUID → /media/usb"
+        else
+            echo "$USB_DEV /media/usb auto defaults,nofail 0 0" | sudo tee -a /etc/fstab > /dev/null
+            print_step "fstab: $USB_DEV → /media/usb"
+        fi
+        sudo systemctl daemon-reload
+        sudo mount /media/usb 2>/dev/null \
+            && print_step "USB drive mounted at /media/usb" \
+            || print_info "Will mount at /media/usb on next reboot"
+    else
+        print_info "No USB drive detected — connect it and run:"
+        print_info "  sudo mount /dev/sda1 /media/usb"
+        print_info "  echo '/dev/sda1 /media/usb auto defaults,nofail 0 0' | sudo tee -a /etc/fstab"
     fi
 
     print_step "Phase 1 complete!"
@@ -454,14 +484,13 @@ NFTEOF
         # the nf_tables kernel backend — the same one that just failed above.
         # Use iptables-legacy which talks directly to the kernel xtables API.
         IPTABLES_CMD="iptables"
-        IPTABLES_SAVE_CMD="iptables-save"
-        IPTABLES_RESTORE_CMD="iptables-restore"
         if command -v iptables-legacy &>/dev/null; then
             IPTABLES_CMD="iptables-legacy"
-            IPTABLES_SAVE_CMD="iptables-legacy-save"
-            IPTABLES_RESTORE_CMD="iptables-legacy-restore"
             print_info "Using iptables-legacy (avoiding nf_tables backend)"
         fi
+
+        # Ensure iptable_nat kernel module is loaded (not autoloaded on Armbian)
+        sudo modprobe iptable_nat 2>/dev/null || true
 
         # Flush old redirect rules
         sudo $IPTABLES_CMD -t nat -D PREROUTING -i "$WIFI_IFACE" -p tcp --dport 80 -j REDIRECT --to-port 8080 2>/dev/null || true
@@ -473,20 +502,23 @@ NFTEOF
         else
             record_failure "Network: iptables redirect rules could not be added"
         fi
-        # Persist iptables rules across reboots
-        sudo $IPTABLES_SAVE_CMD | sudo tee /etc/iptables.rules > /dev/null
-        # Create systemd service to restore rules on boot
+
+        # Persist across reboots by writing a service that re-applies rules
+        # directly — avoids the race where saving an empty ruleset (e.g. if the
+        # NAT table wasn't active yet) would poison every subsequent restore.
         cat <<IPTEOF | sudo tee /etc/systemd/system/iptables-restore.service > /dev/null
 [Unit]
 Description=Restore iptables rules for Delling captive portal
-After=NetworkManager.service
-Wants=NetworkManager.service
+After=NetworkManager.service network-online.target sys-subsystem-net-devices-$WIFI_IFACE.device
+Wants=NetworkManager.service network-online.target
 
 [Service]
 Type=oneshot
 Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 ExecStartPre=/bin/sleep 5
-ExecStart=/bin/sh -c '$IPTABLES_RESTORE_CMD < /etc/iptables.rules'
+ExecStartPre=/sbin/modprobe iptable_nat
+ExecStart=/bin/sh -c "$IPTABLES_CMD -t nat -C PREROUTING -i $WIFI_IFACE -p tcp --dport 80 -j REDIRECT --to-port 8080 2>/dev/null || $IPTABLES_CMD -t nat -A PREROUTING -i $WIFI_IFACE -p tcp --dport 80 -j REDIRECT --to-port 8080"
+ExecStart=/bin/sh -c "$IPTABLES_CMD -t nat -C PREROUTING -i $WIFI_IFACE -p tcp --dport 443 -j REDIRECT --to-port 8443 2>/dev/null || $IPTABLES_CMD -t nat -A PREROUTING -i $WIFI_IFACE -p tcp --dport 443 -j REDIRECT --to-port 8443"
 RemainAfterExit=yes
 Restart=on-failure
 RestartSec=10
@@ -668,8 +700,8 @@ phase4_always_on() {
 # Let Tinymedia wait for the USB mount in ExecStartPre instead of failing the
 # entire service if the mount becomes available slightly after boot.
 Requires=
-Wants=media-tronba-usb.mount
-After=network.target local-fs.target media-tronba-usb.mount
+Wants=media-usb.mount
+After=network.target local-fs.target media-usb.mount
 EOF
 
             print_step "Enabling Tinymedia service..."

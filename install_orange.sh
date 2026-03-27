@@ -263,7 +263,8 @@ phase1_base_system() {
         iw \
         wireless-tools \
         exfat-fuse \
-        exfatprogs; then
+        exfatprogs \
+        udisks2; then
         record_failure "Phase 1: Core dependency installation failed"
         print_info "Fix the apt errors above, then rerun install.sh."
         return 1
@@ -287,6 +288,35 @@ phase1_base_system() {
     if ! groups "$DELLING_USER" | grep -q plugdev; then
         print_step "Adding $DELLING_USER to plugdev group (SDR access)..."
         sudo usermod -aG plugdev "$DELLING_USER"
+    fi
+
+    # --- USB auto-mount at /media/usb ---
+    print_step "Configuring USB auto-mount at /media/usb..."
+    sudo mkdir -p /media/usb
+    # Detect the USB storage partition (exclude eMMC, zram, mtd)
+    USB_DEV=$(lsblk -rno NAME,TYPE,TRAN 2>/dev/null | awk '$2=="part" && $3=="usb" {print "/dev/"$1}' | head -n1)
+    if [ -z "$USB_DEV" ]; then
+        USB_DEV=$(lsblk -rno NAME,TYPE 2>/dev/null | awk '$2=="part" {print "/dev/"$1}' \
+            | grep -Ev 'mmcblk|zram|mtdblock' | head -n1)
+    fi
+    if [ -n "$USB_DEV" ]; then
+        USB_UUID=$(sudo blkid -s UUID -o value "$USB_DEV" 2>/dev/null || true)
+        sudo sed -i '\|/media/usb|d' /etc/fstab
+        if [ -n "$USB_UUID" ]; then
+            echo "UUID=$USB_UUID /media/usb auto defaults,nofail 0 0" | sudo tee -a /etc/fstab > /dev/null
+            print_step "fstab: UUID=$USB_UUID → /media/usb"
+        else
+            echo "$USB_DEV /media/usb auto defaults,nofail 0 0" | sudo tee -a /etc/fstab > /dev/null
+            print_step "fstab: $USB_DEV → /media/usb"
+        fi
+        sudo systemctl daemon-reload
+        sudo mount /media/usb 2>/dev/null \
+            && print_step "USB drive mounted at /media/usb" \
+            || print_info "Will mount at /media/usb on next reboot"
+    else
+        print_info "No USB drive detected — connect it and run:"
+        print_info "  sudo mount /dev/sda1 /media/usb"
+        print_info "  echo '/dev/sda1 /media/usb auto defaults,nofail 0 0' | sudo tee -a /etc/fstab"
     fi
 
     print_step "Phase 1 complete!"
@@ -670,8 +700,8 @@ phase4_always_on() {
 # Let Tinymedia wait for the USB mount in ExecStartPre instead of failing the
 # entire service if the mount becomes available slightly after boot.
 Requires=
-Wants=media-tronba-usb.mount
-After=network.target local-fs.target media-tronba-usb.mount
+Wants=media-usb.mount
+After=network.target local-fs.target media-usb.mount
 EOF
 
             print_step "Enabling Tinymedia service..."
